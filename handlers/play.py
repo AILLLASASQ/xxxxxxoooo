@@ -1,0 +1,85 @@
+"""منطق اللعب الأساسي عبر كل الأوضاع."""
+from aiogram import Bot, F, Router
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery, Message
+
+import keyboards
+import render
+import settings
+import store
+
+router = Router()
+
+
+def _name(user):
+    return user.full_name or (user.username and f"@{user.username}") or str(user.id)
+
+
+async def _update_view(bot: Bot, call: CallbackQuery, data):
+    text, kb = render.render(data)
+    if call.inline_message_id:
+        await bot.edit_message_text(
+            text=text, inline_message_id=call.inline_message_id, reply_markup=kb)
+    else:
+        await call.message.edit_text(text, reply_markup=kb)
+
+
+@router.message(Command("xo"))
+async def cmd_xo(message: Message):
+    if not settings.get("enable_pvp"):
+        await message.answer("وضع المجموعات معطّل حالياً.")
+        return
+    store.ensure_user(message.from_user.id, _name(message.from_user))
+    gid, data = store.create_game(
+        mode="pvp", player_x=message.from_user.id, name_x=_name(message.from_user),
+        chat_id=message.chat.id)
+    text, _ = render.render(data)
+    sent = await message.answer(text, reply_markup=keyboards.join_keyboard(gid))
+    store.db().collection("games").document(gid).update({"message_id": sent.message_id})
+
+
+@router.callback_query(F.data == "mode:bot")
+async def cb_vs_bot(call: CallbackQuery):
+    if not settings.get("enable_vs_bot"):
+        await call.answer("وضع البوت معطّل حالياً.", show_alert=True)
+        return
+    store.ensure_user(call.from_user.id, _name(call.from_user))
+    gid, data = store.create_game(
+        mode="bot", player_x=call.from_user.id, name_x=_name(call.from_user),
+        chat_id=call.message.chat.id)
+    data["player_o"] = 0
+    data["name_o"] = "🤖 البوت"
+    store.db().collection("games").document(gid).update(
+        {"player_o": 0, "name_o": "🤖 البوت"})
+    text, kb = render.render(data)
+    await call.message.edit_text(text, reply_markup=kb)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("j:"))
+async def cb_join(call: CallbackQuery, bot: Bot):
+    gid = call.data.split(":", 1)[1]
+    store.ensure_user(call.from_user.id, _name(call.from_user))
+    ok, data, reason = store.join_game(gid, call.from_user.id, _name(call.from_user))
+    if not ok:
+        await call.answer(reason, show_alert=True)
+        return
+    await _update_view(bot, call, data)
+    await call.answer("انضممت! ابدأ اللعب.")
+
+
+@router.callback_query(F.data.startswith("m:"))
+async def cb_move(call: CallbackQuery, bot: Bot):
+    _, gid, cell = call.data.split(":")
+    ok, data, reason = store.apply_move(gid, call.from_user.id, int(cell))
+    if not ok:
+        await call.answer(reason, show_alert=True)
+        return
+    if data.get("mode") == "bot" and not data.get("finalized") and data["turn"] == "O":
+        data = store.bot_move(gid)
+    await _update_view(bot, call, data)
+    if data.get("finalized"):
+        store.award_result(gid)
+        await call.answer("انتهت اللعبة 🎯")
+    else:
+        await call.answer()
