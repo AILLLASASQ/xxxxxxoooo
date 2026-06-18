@@ -4,6 +4,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 import keyboards
+import moderation
 import render
 import settings
 import store
@@ -15,7 +16,22 @@ def _name(user):
     return user.full_name or (user.username and f"@{user.username}") or str(user.id)
 
 
+async def _edit_both(bot: Bot, data):
+    """تحديث رسالتَي اللاعبَين في اللعبة العشوائية (محادثتان منفصلتان)."""
+    text, kb = render.render(data)
+    for ck, mk in (("x_chat_id", "x_msg_id"), ("o_chat_id", "o_msg_id")):
+        try:
+            await bot.edit_message_text(
+                text=text, chat_id=data[ck], message_id=data[mk], reply_markup=kb)
+        except Exception:
+            pass
+
+
 async def _update_view(bot: Bot, call: CallbackQuery, data):
+    """تحديث عرض اللعبة حسب الوضع."""
+    if data.get("mode") == "random":
+        await _edit_both(bot, data)
+        return
     text, kb = render.render(data)
     if call.inline_message_id:
         await bot.edit_message_text(
@@ -24,6 +40,19 @@ async def _update_view(bot: Bot, call: CallbackQuery, data):
         await call.message.edit_text(text, reply_markup=kb)
 
 
+def _finalize_points(gid, data):
+    """احتساب النقاط مع حماية ضد التواطؤ (سقف مباريات نفس الخصم)."""
+    if data.get("mode") == "bot":
+        store.award_result(gid)
+        return
+    # لاعب ضد لاعب (pvp / inline / random)
+    cnt = moderation.record_pair_match(data.get("player_x"), data.get("player_o"))
+    limit = settings.get("pair_limit")
+    allow = (not limit) or cnt <= int(limit)
+    store.award_result(gid, allow_points=allow)
+
+
+# ---------- بدء لعبة في مجموعة ----------
 @router.message(Command("xo"))
 async def cmd_xo(message: Message):
     if not settings.get("enable_pvp"):
@@ -38,6 +67,7 @@ async def cmd_xo(message: Message):
     store.db().collection("games").document(gid).update({"message_id": sent.message_id})
 
 
+# ---------- بدء لعبة ضد البوت ----------
 @router.callback_query(F.data == "mode:bot")
 async def cb_vs_bot(call: CallbackQuery):
     if not settings.get("enable_vs_bot"):
@@ -56,6 +86,7 @@ async def cb_vs_bot(call: CallbackQuery):
     await call.answer()
 
 
+# ---------- انضمام لاعب ثانٍ (مجموعات / إنلاين) ----------
 @router.callback_query(F.data.startswith("j:"))
 async def cb_join(call: CallbackQuery, bot: Bot):
     gid = call.data.split(":", 1)[1]
@@ -68,6 +99,7 @@ async def cb_join(call: CallbackQuery, bot: Bot):
     await call.answer("انضممت! ابدأ اللعب.")
 
 
+# ---------- تطبيق حركة ----------
 @router.callback_query(F.data.startswith("m:"))
 async def cb_move(call: CallbackQuery, bot: Bot):
     _, gid, cell = call.data.split(":")
@@ -75,11 +107,16 @@ async def cb_move(call: CallbackQuery, bot: Bot):
     if not ok:
         await call.answer(reason, show_alert=True)
         return
+
+    # وضع البوت: لو لم تنتهِ ودور O، يلعب البوت
     if data.get("mode") == "bot" and not data.get("finalized") and data["turn"] == "O":
         data = store.bot_move(gid)
+
     await _update_view(bot, call, data)
+
     if data.get("finalized"):
-        store.award_result(gid)
+        _finalize_points(gid, data)
         await call.answer("انتهت اللعبة 🎯")
     else:
         await call.answer()
+

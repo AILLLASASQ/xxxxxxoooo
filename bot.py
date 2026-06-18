@@ -1,4 +1,5 @@
 """نقطة الدخول — يشغّل البوت عبر webhook على Render."""
+import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -11,7 +12,7 @@ from aiohttp import web
 import config
 import settings
 from firebase_db import init_db
-from handlers import admin, common, inline, play
+from handlers import admin, common, inline, matchmaking, play
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,6 +21,7 @@ bot = Bot(token=config.BOT_TOKEN,
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(admin.router)
 dp.include_router(common.router)
+dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
 
@@ -29,6 +31,7 @@ async def on_startup(app: web.Application):
     settings.load_settings()
     await bot.set_webhook(url=config.WEBHOOK_URL, drop_pending_updates=True,
                           allowed_updates=dp.resolve_used_update_types())
+    asyncio.create_task(matchmaking.search_timeout_loop(bot))
     logging.info("Webhook set: %s", config.WEBHOOK_URL)
 
 
@@ -52,3 +55,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -1,4 +1,8 @@
-"""طبقة البيانات: ألعاب ومستخدمون ونقاط — كل العمليات الحسّاسة داخل transaction."""
+"""طبقة البيانات: الألعاب والمستخدمون والنقاط.
+
+كل العمليات الحسّاسة (تطبيق حركة، احتساب النقاط) تتم داخل Firestore transaction
+لتفادي race conditions و double-counting — وهي المشاكل اللي تكررت سابقاً.
+"""
 import secrets
 import time
 
@@ -8,6 +12,7 @@ import game
 import settings
 from firebase_db import db
 
+# حالة مؤقتة لألعاب الإنلاين بين inline_query و chosen_inline_result
 _pending_inline = {}
 
 
@@ -17,9 +22,10 @@ def new_game_id():
 
 def create_game(mode, player_x, name_x, chat_id=None, message_id=None,
                 inline_message_id=None):
+    """إنشاء مستند لعبة جديدة وإرجاع (game_id, data)."""
     gid = new_game_id()
     data = {
-        "mode": mode,
+        "mode": mode,                 # "pvp" | "bot" | "inline"
         "board": game.board_to_str(game.new_board()),
         "turn": "X",
         "player_x": player_x,
@@ -38,6 +44,30 @@ def create_game(mode, player_x, name_x, chat_id=None, message_id=None,
     return gid, data
 
 
+def create_random_game(x, o):
+    """إنشاء لعبة عشوائية بين لاعبَين في محادثتين منفصلتين.
+
+    x و o قاموسان فيهما: id, name, chat_id, msg_id.
+    """
+    gid = new_game_id()
+    data = {
+        "mode": "random",
+        "board": game.board_to_str(game.new_board()),
+        "turn": "X",
+        "player_x": int(x["id"]), "name_x": x["name"],
+        "player_o": int(o["id"]), "name_o": o["name"],
+        "x_chat_id": int(x["chat_id"]), "x_msg_id": int(x["msg_id"]),
+        "o_chat_id": int(o["chat_id"]), "o_msg_id": int(o["msg_id"]),
+        "winner": None,
+        "finalized": False,
+        "points_awarded": False,
+        "created_at": int(time.time()),
+    }
+    db().collection("games").document(gid).set(data)
+    data["_gid"] = gid
+    return gid, data
+
+
 def get_game(gid):
     snap = db().collection("games").document(gid).get()
     if not snap.exists:
@@ -47,7 +77,9 @@ def get_game(gid):
     return d
 
 
+# ---------- الانضمام (transaction) ----------
 def join_game(gid, player_o, name_o):
+    """انضمام اللاعب الثاني. يرجع (ok, data, reason)."""
     ref = db().collection("games").document(gid)
 
     @transactional
@@ -69,7 +101,12 @@ def join_game(gid, player_o, name_o):
     return _txn(db().transaction())
 
 
+# ---------- تطبيق حركة (transaction) ----------
 def apply_move(gid, user_id, cell):
+    """تطبيق حركة بأمان. يرجع (ok, data, reason).
+
+    يتحقق من: وجود اللعبة، عدم إنهائها، صحة الدور، فراغ الخانة.
+    """
     ref = db().collection("games").document(gid)
 
     @transactional
@@ -80,8 +117,11 @@ def apply_move(gid, user_id, cell):
         d = snap.to_dict()
         if d.get("finalized"):
             return False, d, "انتهت اللعبة."
+
         board = game.board_from_str(d["board"])
         turn = d["turn"]
+
+        # من صاحب الدور؟
         expected = d["player_x"] if turn == "X" else d["player_o"]
         if expected is None:
             return False, d, "ننتظر انضمام لاعب ثانٍ."
@@ -89,14 +129,20 @@ def apply_move(gid, user_id, cell):
             return False, d, "ليس دورك."
         if cell < 0 or cell > 8 or board[cell]:
             return False, d, "خانة غير صالحة."
+
         board[cell] = turn
         result = game.winner(board)
         next_turn = "O" if turn == "X" else "X"
-        update = {"board": game.board_to_str(board), "turn": next_turn}
+
+        update = {
+            "board": game.board_to_str(board),
+            "turn": next_turn,
+        }
         if result:
             update["winner"] = result
             update["finalized"] = True
         txn.update(ref, update)
+
         d.update(update)
         d["_gid"] = gid
         return True, d, ""
@@ -105,10 +151,12 @@ def apply_move(gid, user_id, cell):
 
 
 def bot_move(gid):
+    """حركة البوت في وضع vs-bot. يرجع data بعد التحديث."""
     ref = db().collection("games").document(gid)
     d = get_game(gid)
     if not d or d.get("finalized"):
         return d
+
     board = game.board_from_str(d["board"])
     move = game.best_move(board, "O", "X", settings.get("bot_difficulty"))
     if move is None:
@@ -124,14 +172,23 @@ def bot_move(gid):
     return d
 
 
+# ---------- النقاط (transaction آمن من الازدواج) ----------
 def ensure_user(user_id, name):
     ref = db().collection("users").document(str(user_id))
     if not ref.get().exists:
-        ref.set({"name": name, "points": 0, "wins": 0,
-                 "losses": 0, "draws": 0, "last_daily": 0})
+        ref.set({
+            "name": name, "points": 0,
+            "wins": 0, "losses": 0, "draws": 0,
+            "last_daily": 0,
+        })
 
 
-def award_result(gid):
+def award_result(gid, allow_points=True):
+    """احتساب نقاط نتيجة اللعبة مرة واحدة فقط (idempotent).
+
+    تستخدم علم points_awarded داخل مستند اللعبة لمنع الاحتساب المزدوج.
+    إذا allow_points=False (تجاوز حد مباريات نفس الخصم) تُختم اللعبة بلا نقاط.
+    """
     gref = db().collection("games").document(gid)
 
     @transactional
@@ -142,7 +199,11 @@ def award_result(gid):
         d = snap.to_dict()
         if not d.get("finalized") or d.get("points_awarded"):
             return
+        if not allow_points:
+            txn.update(gref, {"points_awarded": True})
+            return
         if d.get("mode") == "bot":
+            # ضد البوت: نحتسب للاعب البشري (X) فقط
             _apply_points(txn, d["player_x"], d["winner"], human_mark="X")
         else:
             _apply_points(txn, d["player_x"], d["winner"], human_mark="X")
@@ -161,12 +222,16 @@ def _apply_points(txn, user_id, result, human_mark):
         pts, field = settings.get("points_win"), "wins"
     else:
         pts, field = settings.get("points_loss"), "losses"
-    txn.set(ref, {"points": Increment(pts), field: Increment(1)}, merge=True)
+    txn.set(ref, {
+        "points": Increment(pts),
+        field: Increment(1),
+    }, merge=True)
 
 
 def leaderboard(limit=10):
     q = (db().collection("users")
-         .order_by("points", direction="DESCENDING").limit(limit))
+         .order_by("points", direction="DESCENDING")
+         .limit(limit))
     return [(s.to_dict().get("name", "?"), s.to_dict().get("points", 0))
             for s in q.stream()]
 
@@ -174,3 +239,4 @@ def leaderboard(limit=10):
 def get_user(user_id):
     snap = db().collection("users").document(str(user_id)).get()
     return snap.to_dict() if snap.exists else None
+

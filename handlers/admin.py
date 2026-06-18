@@ -1,10 +1,14 @@
-"""لوحة تحكم المالك — تعديل كل شيء حياً من تيليجرام."""
-from aiogram import F, Router
+"""لوحة تحكم المالك — تعديل كل شيء حياً من داخل تيليجرام."""
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (CallbackQuery, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message)
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 import config
 import settings
@@ -21,12 +25,26 @@ class EditState(StatesGroup):
     waiting_value = State()
 
 
-NUMERIC = {"points_win": "نقاط الفوز", "points_draw": "نقاط التعادل",
-           "points_loss": "نقاط الخسارة", "daily_bonus": "مكافأة يومية"}
-TEXTS = {"text_welcome": "نص الترحيب", "text_win": "نص الفوز (استخدم {name})",
-         "text_draw": "نص التعادل"}
-TOGGLES = {"enable_pvp": "وضع المجموعات", "enable_vs_bot": "وضع البوت",
-           "enable_inline": "وضع الإنلاين"}
+# المفاتيح القابلة للتعديل كرقم
+NUMERIC = {
+    "points_win": "نقاط الفوز",
+    "points_draw": "نقاط التعادل",
+    "points_loss": "نقاط الخسارة",
+    "daily_bonus": "مكافأة يومية",
+    "daily_limit": "الحد اليومي للمباريات",
+    "pair_limit": "حد مباريات نفس الخصم",
+}
+# المفاتيح النصية
+TEXTS = {
+    "text_welcome": "نص الترحيب",
+    "text_win": "نص الفوز (استخدم {name})",
+    "text_draw": "نص التعادل",
+}
+TOGGLES = {
+    "enable_pvp": "وضع المجموعات",
+    "enable_vs_bot": "وضع البوت",
+    "enable_inline": "وضع الإنلاين",
+}
 
 
 def panel():
@@ -52,11 +70,12 @@ async def cmd_admin(message: Message):
 async def a_points(call: CallbackQuery):
     if not is_owner(call.from_user.id):
         return await call.answer()
-    rows = [[InlineKeyboardButton(text=f"{label}: {settings.get(key)}",
-             callback_data=f"set:{key}")] for key, label in NUMERIC.items()]
+    rows = [[InlineKeyboardButton(
+        text=f"{label}: {settings.get(key)}", callback_data=f"set:{key}")]
+        for key, label in NUMERIC.items()]
     rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
-    await call.message.edit_text("اختر القيمة لتعديلها:",
-                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.message.edit_text(
+        "اختر القيمة لتعديلها:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
 
@@ -67,8 +86,8 @@ async def a_texts(call: CallbackQuery):
     rows = [[InlineKeyboardButton(text=label, callback_data=f"set:{key}")]
             for key, label in TEXTS.items()]
     rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
-    await call.message.edit_text("اختر النص لتعديله:",
-                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.message.edit_text(
+        "اختر النص لتعديله:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
 
@@ -79,11 +98,11 @@ async def a_toggles(call: CallbackQuery):
     rows = []
     for key, label in TOGGLES.items():
         state = "✅" if settings.get(key) else "❌"
-        rows.append([InlineKeyboardButton(text=f"{state} {label}",
-                                          callback_data=f"tg:{key}")])
+        rows.append([InlineKeyboardButton(
+            text=f"{state} {label}", callback_data=f"tg:{key}")])
     rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
-    await call.message.edit_text("اضغط للتبديل:",
-                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.message.edit_text(
+        "اضغط للتبديل:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
 
@@ -140,6 +159,7 @@ async def a_back(call: CallbackQuery):
     await call.answer()
 
 
+# ---------- إدخال قيمة جديدة عبر FSM ----------
 @router.callback_query(F.data.startswith("set:"))
 async def a_set_start(call: CallbackQuery, state: FSMContext):
     if not is_owner(call.from_user.id):
@@ -169,3 +189,4 @@ async def a_set_value(message: Message, state: FSMContext):
     settings.update(key, value)
     await state.clear()
     await message.answer(f"✅ تم التحديث: {key} = {value}", reply_markup=panel())
+
