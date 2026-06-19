@@ -14,7 +14,6 @@ import store
 
 router = Router()
 
-# مكافحة السبام لبطاقات الضيف: بطاقة واحدة لكل مستخدم خلال فترة التهدئة
 _GUEST_COOLDOWN = 10  # ثوانٍ
 _last_guest = {}      # user_id -> monotonic timestamp
 
@@ -24,7 +23,6 @@ def _name(user):
 
 
 def _guest_throttled(user_id):
-    """True إذا كان المستخدم ضمن فترة التهدئة (يُكتم الرد)."""
     now = time.monotonic()
     last = _last_guest.get(user_id, 0.0)
     if now - last < _GUEST_COOLDOWN:
@@ -37,18 +35,36 @@ def _guest_throttled(user_id):
     return False
 
 
+# سيمانتك موحّد: الرمز في الـcallback = الرمز الذي يأخذه الضاغط (المنضم)؛ الطرف الآخر يأخذ المعاكس.
+def _join_kb(gid, creator_id, joiner_sym):
+    """زر انضمام واحد بالرمز المتبقّي (للإنلاين). callback: ij:{gid}:{creator_id}:{joiner_sym}"""
+    emoji = "❌" if joiner_sym == "X" else "⭕"
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text=f"🎮 انضم كـ {emoji}", callback_data=f"ij:{gid}:{creator_id}:{joiner_sym}")]])
+
+
 def _choose_kb(gid, creator_id):
-    """زرّا اختيار الرمز للمنضم. callback: ij:{gid}:{creator_id}:{X|O}"""
+    """زرّا اختيار الرمز للمنضم (للضيف). callback: ij:{gid}:{creator_id}:{X|O}"""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❌", callback_data=f"ij:{gid}:{creator_id}:X"),
         InlineKeyboardButton(text="⭕", callback_data=f"ij:{gid}:{creator_id}:O"),
     ]])
 
 
-def _invite_text(creator_name):
+def _invite_text(creator_name, creator_sym):
+    c = "❌" if creator_sym == "X" else "⭕"
+    o = "⭕" if creator_sym == "X" else "❌"
     return (
         "⭕❌ إكس أو\n"
-        f"{creator_name} يدعوك للعب!\n\n"
+        f"{c} {creator_name}  ضد  {o} ⏳ بانتظار لاعب\n\n"
+        f"اضغط (انضم كـ {o}) لبدء المباراة."
+    )
+
+
+def _guest_text(caller_name):
+    return (
+        "⭕❌ إكس أو\n"
+        f"{caller_name} يدعوك للعب!\n\n"
         "اختر رمزك للانضمام: ❌ أو ⭕"
     )
 
@@ -61,15 +77,27 @@ async def inline_xo(query: InlineQuery):
 
     store.ensure_user(query.from_user.id, _name(query.from_user))
     gid = store.new_game_id()
-    result = InlineQueryResultArticle(
-        id=gid,
-        title="🎮 ابدأ لعبة إكس أو",
-        description="العب ضد أي شخص في هذه المحادثة — يختار خصمك ❌ أو ⭕",
-        input_message_content=InputTextMessageContent(
-            message_text=_invite_text(_name(query.from_user))),
-        reply_markup=_choose_kb(gid, query.from_user.id),
-    )
-    await query.answer([result], cache_time=1, is_personal=True)
+    cid = query.from_user.id
+    cname = _name(query.from_user)
+    results = [
+        InlineQueryResultArticle(
+            id=f"{gid}-X",
+            title="🎮 العب كـ ❌ (تبدأ أنت)",
+            description="ترسل التحدي وتلعب بالرمز ❌",
+            input_message_content=InputTextMessageContent(
+                message_text=_invite_text(cname, "X")),
+            reply_markup=_join_kb(gid, cid, "O"),   # خصمك يأخذ ⭕
+        ),
+        InlineQueryResultArticle(
+            id=f"{gid}-O",
+            title="🎮 العب كـ ⭕ (يبدأ خصمك)",
+            description="ترسل التحدي وتلعب بالرمز ⭕",
+            input_message_content=InputTextMessageContent(
+                message_text=_invite_text(cname, "O")),
+            reply_markup=_join_kb(gid, cid, "X"),   # خصمك يأخذ ❌
+        ),
+    ]
+    await query.answer(results, cache_time=1, is_personal=True)
 
 
 @router.callback_query(F.data.startswith("ij:"))
@@ -99,7 +127,7 @@ async def inline_join(call: CallbackQuery, bot: Bot):
     creator = store.get_user(creator_id) or {}
     creator_name = creator.get("name", "اللاعب")
 
-    # المنضم اختار رمزه؛ الصانع يأخذ المعاكس.
+    # sym = رمز الضاغط (المنضم)؛ الطرف الآخر يأخذ المعاكس.
     # create_inline_game: الوسيط الأول = X، والثاني = O
     if sym == "X":
         data = store.create_inline_game(
@@ -122,10 +150,8 @@ async def inline_join(call: CallbackQuery, bot: Bot):
 # ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية (خاص + مجموعات) =====
 @router.guest_message()
 async def guest_xo(message: Message):
-    """عند ذكر @البوت في أي محادثة، نرد ببطاقة دعوة (اختيار الرمز)."""
     if not settings.get("enable_guest"):
         return
-
     caller = message.from_user
     if caller is None or not message.guest_query_id:
         return
@@ -139,9 +165,9 @@ async def guest_xo(message: Message):
     result = InlineQueryResultArticle(
         id=gid,
         title="🎮 ابدأ لعبة إكس أو",
-        description="العب ضد من ذكر البوت — يختار خصمك ❌ أو ⭕",
+        description="العب ضد من ذكر البوت — اختر ❌ أو ⭕",
         input_message_content=InputTextMessageContent(
-            message_text=_invite_text(_name(caller))),
+            message_text=_guest_text(_name(caller))),
         reply_markup=_choose_kb(gid, caller.id),
     )
     try:
