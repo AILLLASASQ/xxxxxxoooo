@@ -1,5 +1,6 @@
 """وضع الإنلاين: لعب إكس أو أونلاين عبر يوزر البوت في أي محادثة."""
 import logging
+import time
 
 from aiogram import Bot, F, Router
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
@@ -13,9 +14,28 @@ import store
 
 router = Router()
 
+# مكافحة السبام لبطاقات الضيف: بطاقة واحدة لكل مستخدم خلال فترة التهدئة
+_GUEST_COOLDOWN = 10  # ثوانٍ
+_last_guest = {}      # user_id -> monotonic timestamp
+
 
 def _name(user):
     return user.full_name or (user.username and f"@{user.username}") or str(user.id)
+
+
+def _guest_throttled(user_id):
+    """True إذا كان المستخدم ضمن فترة التهدئة (يُكتم الرد)."""
+    now = time.monotonic()
+    last = _last_guest.get(user_id, 0.0)
+    if now - last < _GUEST_COOLDOWN:
+        return True
+    _last_guest[user_id] = now
+    # تنظيف خفيف لمنع تضخّم الذاكرة مع الوقت
+    if len(_last_guest) > 5000:
+        cutoff = now - _GUEST_COOLDOWN
+        for uid in [u for u, t in _last_guest.items() if t < cutoff]:
+            _last_guest.pop(uid, None)
+    return False
 
 
 def _join_kb(gid, creator_id):
@@ -82,15 +102,24 @@ async def inline_join(call: CallbackQuery, bot: Bot):
     await call.answer("بدأت اللعبة!")
 
 
-# ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية =====
+# ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية (خاص + مجموعات) =====
 @router.guest_message()
 async def guest_xo(message: Message):
     """عند ذكر @البوت في أي محادثة، نرد ببطاقة لعبة (نفس بطاقة الإنلاين)."""
     if not settings.get("enable_guest"):
         return
+
     # في تحديث guest_message: المُستدعي هو from_user، والرد عبر guest_query_id
     caller = message.from_user
     if caller is None or not message.guest_query_id:
+        return
+
+    # تجاهل استدعاء البوتات الأخرى
+    if caller.is_bot:
+        return
+
+    # مكافحة السبام: بطاقة واحدة لكل مستخدم خلال فترة التهدئة
+    if _guest_throttled(caller.id):
         return
 
     store.ensure_user(caller.id, _name(caller))
