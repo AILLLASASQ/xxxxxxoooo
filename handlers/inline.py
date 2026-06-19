@@ -88,9 +88,15 @@ async def guest_xo(message: Message):
     """عند ذكر @البوت في أي محادثة، نرد ببطاقة لعبة (نفس بطاقة الإنلاين)."""
     if not settings.get("enable_guest"):
         return
-    caller = message.guest_bot_caller_user
-    if caller is None:
+    # في تحديث guest_message: المُستدعي هو from_user، والرد عبر guest_query_id
+    caller = message.from_user
+    if caller is None or not message.guest_query_id:
+        logging.info("guest_xo skipped: from_user=%s qid=%s",
+                     caller, message.guest_query_id)
         return
+
+    logging.info("guest_xo fired by %s in chat %s",
+                 caller.id, message.chat.id if message.chat else None)
     store.ensure_user(caller.id, _name(caller))
     gid = store.new_game_id()
     preview = (
