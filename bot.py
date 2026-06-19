@@ -34,12 +34,16 @@ async def on_startup(app: web.Application):
     settings.load_settings()
     await bot.set_webhook(url=config.WEBHOOK_URL, drop_pending_updates=True,
                           allowed_updates=dp.resolve_used_update_types())
-    asyncio.create_task(matchmaking.search_timeout_loop(bot))
+    # نخزّن مرجعاً قوياً للمهمة حتى لا يجمعها جامع المهملات فتتوقف
+    app["timeout_task"] = asyncio.create_task(matchmaking.search_timeout_loop(bot))
     logging.info("Webhook set: %s", config.WEBHOOK_URL)
 
 
 async def on_shutdown(app: web.Application):
     # لا نحذف الويب هوك حتى يبقى ثابتاً وتُوقظ الرسائلُ الخدمةَ
+    task = app.get("timeout_task")
+    if task:
+        task.cancel()
     await bot.session.close()
 
 
