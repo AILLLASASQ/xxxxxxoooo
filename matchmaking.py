@@ -27,6 +27,12 @@ def queue_in(user_id):
     return db().collection("queue").document(str(user_id)).get().exists
 
 
+def queue_get(user_id):
+    """يعيد بيانات إدخال اللاعب في الطابور أو None."""
+    snap = db().collection("queue").document(str(user_id)).get()
+    return snap.to_dict() if snap.exists else None
+
+
 def queue_size():
     try:
         return int(db().collection("queue").count().get()[0][0].value)

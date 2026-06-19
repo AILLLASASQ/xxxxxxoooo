@@ -1,10 +1,17 @@
-"""المطابقة العشوائية: زر "خصم عشوائي" + بحث/إلغاء + إنشاء لعبة بين محادثتين."""
+"""المطابقة العشوائية: زر "خصم عشوائي" + بحث/إلغاء + مصالحة الطابور.
+
+طبقات إلغاء البحث المنتهي (يكفي أن تعمل واحدة):
+  1) مهمة خلفية دورية (وقت اليقظة).
+  2) middleware يُنظّف كل عدد من التحديثات الواردة (Piggyback).
+الكل يستدعي دالة واحدة: reconcile_queue.
+"""
 import asyncio
 import logging
+import time
 
-from aiogram import Bot, F, Router
+from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
-                           InlineKeyboardMarkup)
+                           InlineKeyboardMarkup, TelegramObject)
 
 import keyboards
 import matchmaking
@@ -15,7 +22,8 @@ import store
 
 router = Router()
 
-SEARCH_TIMEOUT = 60  # ثانية قبل إلغاء البحث تلقائياً
+SEARCH_TIMEOUT = 60          # ثانية قبل إلغاء البحث تلقائياً
+PIGGYBACK_EVERY = 20         # كل كم تحديث وارد نُنظّف الطابور
 
 
 def _name(user):
@@ -25,6 +33,37 @@ def _name(user):
 def _cancel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ إلغاء البحث", callback_data="mm:cancel")]])
+
+
+# ===== الأساس المشترك: دالة المصالحة (#7) =====
+async def reconcile_queue(bot: Bot):
+    """تُنهي وتُبلّغ كل من تجاوز مهلة البحث. يستدعيها كل المُشغّلات."""
+    for s in matchmaking.stale_searchers(SEARCH_TIMEOUT):
+        matchmaking.queue_remove(s["user_id"])
+        try:
+            await bot.edit_message_text(
+                "😔 لم نجد لك خصماً الآن. حاول لاحقاً.",
+                chat_id=s["chat_id"], message_id=s["msg_id"],
+                reply_markup=keyboards.main_menu())
+        except Exception:
+            pass
+
+
+# ===== Piggyback: تنظيف عابر على التحديثات الواردة (#10) =====
+class QueueCleanupMiddleware(BaseMiddleware):
+    """كل PIGGYBACK_EVERY تحديث، يُشغّل مصالحة الطابور في الخلفية."""
+
+    def __init__(self, every=PIGGYBACK_EVERY):
+        self.every = every
+        self.count = 0
+
+    async def __call__(self, handler, event: TelegramObject, data):
+        self.count += 1
+        if self.count % self.every == 0:
+            bot = data.get("bot")
+            if bot is not None:
+                asyncio.create_task(reconcile_queue(bot))
+        return await handler(event, data)
 
 
 async def _send_both(bot: Bot, data):
@@ -53,6 +92,15 @@ async def mm_find(call: CallbackQuery, bot: Bot):
     if moderation.is_banned(uid):
         await call.answer("أنت محظور من اللعب.", show_alert=True)
         return
+
+    # === حارس الضغط المزدوج (#8) ===
+    existing = matchmaking.queue_get(uid)
+    if existing:
+        fresh = int(time.time()) - int(existing.get("joined_at", 0)) < SEARCH_TIMEOUT
+        if fresh:
+            await call.answer("أنت بالفعل في قائمة البحث ⏳", show_alert=True)
+            return
+        matchmaking.queue_remove(uid)  # إدخال قديم منتهٍ → اسمح ببحث جديد
 
     limit = settings.get("daily_limit")
     if moderation.at_daily_limit(uid, limit):
@@ -90,19 +138,11 @@ async def mm_cancel(call: CallbackQuery):
     await call.answer()
 
 
+# ===== مهمة خلفية دورية (تستدعي نفس دالة المصالحة) =====
 async def search_timeout_loop(bot: Bot):
-    """مهمة خلفية: تُلغي عمليات البحث المنتهية وتُبلغ اللاعب."""
     while True:
         try:
-            for s in matchmaking.stale_searchers(SEARCH_TIMEOUT):
-                matchmaking.queue_remove(s["user_id"])
-                try:
-                    await bot.edit_message_text(
-                        "😔 لم نجد لك خصماً الآن. حاول لاحقاً.",
-                        chat_id=s["chat_id"], message_id=s["msg_id"],
-                        reply_markup=keyboards.main_menu())
-                except Exception:
-                    pass
+            await reconcile_queue(bot)
         except Exception as e:
             logging.warning("search_timeout_loop: %s", e)
         await asyncio.sleep(5)
