@@ -9,6 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
+import cleanup
 import config
 import settings
 from firebase_db import init_db
@@ -25,8 +26,9 @@ dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
 
-# تنظيف عابر للطابور كل عدد من التحديثات (Piggyback)
+# تنظيف عابر للطابور + تنظيف الألعاب العالقة (Piggyback)
 dp.update.outer_middleware(matchmaking.QueueCleanupMiddleware())
+dp.update.outer_middleware(cleanup.StaleGameCleanupMiddleware())
 
 
 async def on_startup(app: web.Application):
@@ -34,13 +36,11 @@ async def on_startup(app: web.Application):
     settings.load_settings()
     await bot.set_webhook(url=config.WEBHOOK_URL, drop_pending_updates=True,
                           allowed_updates=dp.resolve_used_update_types())
-    # نخزّن مرجعاً قوياً للمهمة حتى لا يجمعها جامع المهملات فتتوقف
     app["timeout_task"] = asyncio.create_task(matchmaking.search_timeout_loop(bot))
     logging.info("Webhook set: %s", config.WEBHOOK_URL)
 
 
 async def on_shutdown(app: web.Application):
-    # لا نحذف الويب هوك حتى يبقى ثابتاً وتُوقظ الرسائلُ الخدمةَ
     task = app.get("timeout_task")
     if task:
         task.cancel()

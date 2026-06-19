@@ -35,19 +35,19 @@ def _guest_throttled(user_id):
     return False
 
 
-# سيمانتك موحّد: الرمز في الـcallback = الرمز الذي يأخذه الضاغط (المنضم)؛ الطرف الآخر يأخذ المعاكس.
-def _join_kb(gid, creator_id, joiner_sym):
-    """زر انضمام واحد بالرمز المتبقّي (للإنلاين). callback: ij:{gid}:{creator_id}:{joiner_sym}"""
+# سيمانتك موحّد: الرمز في الـcallback = الرمز الذي يأخذه الضاغط (المنضم).
+# والـts = وقت إنشاء البطاقة لفحص انتهاء الصلاحية.
+def _join_kb(gid, creator_id, joiner_sym, ts):
     emoji = "❌" if joiner_sym == "X" else "⭕"
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-        text=f"🎮 انضم كـ {emoji}", callback_data=f"ij:{gid}:{creator_id}:{joiner_sym}")]])
+        text=f"🎮 انضم كـ {emoji}",
+        callback_data=f"ij:{gid}:{creator_id}:{joiner_sym}:{ts}")]])
 
 
-def _choose_kb(gid, creator_id):
-    """زرّا اختيار الرمز للمنضم (للضيف). callback: ij:{gid}:{creator_id}:{X|O}"""
+def _choose_kb(gid, creator_id, ts):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="❌", callback_data=f"ij:{gid}:{creator_id}:X"),
-        InlineKeyboardButton(text="⭕", callback_data=f"ij:{gid}:{creator_id}:O"),
+        InlineKeyboardButton(text="❌", callback_data=f"ij:{gid}:{creator_id}:X:{ts}"),
+        InlineKeyboardButton(text="⭕", callback_data=f"ij:{gid}:{creator_id}:O:{ts}"),
     ]])
 
 
@@ -79,6 +79,7 @@ async def inline_xo(query: InlineQuery):
     gid = store.new_game_id()
     cid = query.from_user.id
     cname = _name(query.from_user)
+    ts = int(time.time())
     results = [
         InlineQueryResultArticle(
             id=f"{gid}-X",
@@ -86,7 +87,7 @@ async def inline_xo(query: InlineQuery):
             description="ترسل التحدي وتلعب بالرمز ❌",
             input_message_content=InputTextMessageContent(
                 message_text=_invite_text(cname, "X")),
-            reply_markup=_join_kb(gid, cid, "O"),   # خصمك يأخذ ⭕
+            reply_markup=_join_kb(gid, cid, "O", ts),
         ),
         InlineQueryResultArticle(
             id=f"{gid}-O",
@@ -94,7 +95,7 @@ async def inline_xo(query: InlineQuery):
             description="ترسل التحدي وتلعب بالرمز ⭕",
             input_message_content=InputTextMessageContent(
                 message_text=_invite_text(cname, "O")),
-            reply_markup=_join_kb(gid, cid, "X"),   # خصمك يأخذ ❌
+            reply_markup=_join_kb(gid, cid, "X", ts),
         ),
     ]
     await query.answer(results, cache_time=1, is_personal=True)
@@ -103,13 +104,26 @@ async def inline_xo(query: InlineQuery):
 @router.callback_query(F.data.startswith("ij:"))
 async def inline_join(call: CallbackQuery, bot: Bot):
     try:
-        _, gid, creator_id, sym = call.data.split(":")
+        _, gid, creator_id, sym, ts = call.data.split(":")
         creator_id = int(creator_id)
+        ts = int(ts)
     except Exception:
         await call.answer("بيانات غير صالحة.", show_alert=True)
         return
     if sym not in ("X", "O"):
         await call.answer("بيانات غير صالحة.", show_alert=True)
+        return
+
+    # انتهاء صلاحية الدعوة (سقف صارم منذ إنشاء البطاقة)
+    timeout = int(settings.get("stale_timeout") or 0)
+    if timeout > 0 and int(time.time()) - ts > timeout:
+        await call.answer("انتهت صلاحية هذه الدعوة.", show_alert=True)
+        try:
+            await bot.edit_message_text(
+                text=f"⭕❌ إكس أو\n\n{settings.get('text_expired')}",
+                inline_message_id=call.inline_message_id)
+        except Exception:
+            logging.exception("expire invite edit failed")
         return
 
     joiner = call.from_user
@@ -162,13 +176,14 @@ async def guest_xo(message: Message):
 
     store.ensure_user(caller.id, _name(caller))
     gid = store.new_game_id()
+    ts = int(time.time())
     result = InlineQueryResultArticle(
         id=gid,
         title="🎮 ابدأ لعبة إكس أو",
         description="العب ضد من ذكر البوت — اختر ❌ أو ⭕",
         input_message_content=InputTextMessageContent(
             message_text=_guest_text(_name(caller))),
-        reply_markup=_choose_kb(gid, caller.id),
+        reply_markup=_choose_kb(gid, caller.id, ts),
     )
     try:
         await message.answer_guest_query(result=result)

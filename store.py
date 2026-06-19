@@ -259,3 +259,32 @@ def get_user(user_id):
     snap = db().collection("users").document(str(user_id)).get()
     return snap.to_dict() if snap.exists else None
 
+
+
+# ---------- تنظيف الألعاب العالقة (سقف صارم منذ الإنشاء) ----------
+def fetch_stale_games(max_age, limit=50):
+    """يرجع الألعاب غير المنتهية التي مضى على إنشائها أكثر من max_age ثانية.
+
+    استعلام بسيط (finalized == False) ثم تصفية created_at في الكود
+    لتفادي الحاجة لفهرس مركّب في Firestore.
+    """
+    from google.cloud.firestore_v1 import FieldFilter
+    now = int(time.time())
+    cutoff = now - int(max_age)
+    out = []
+    q = (db().collection("games")
+         .where(filter=FieldFilter("finalized", "==", False))
+         .limit(int(limit)))
+    for s in q.stream():
+        d = s.to_dict() or {}
+        if int(d.get("created_at", now)) <= cutoff:
+            d["_gid"] = s.id
+            out.append(d)
+    return out
+
+
+def delete_game(gid):
+    try:
+        db().collection("games").document(gid).delete()
+    except Exception:
+        pass
