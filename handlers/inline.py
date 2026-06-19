@@ -1,13 +1,15 @@
 """وضع الإنلاين: لعب إكس أو أونلاين عبر يوزر البوت في أي محادثة."""
+import logging
+
 from aiogram import Bot, F, Router
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, InlineQuery,
-                           InlineQueryResultArticle, InputTextMessageContent)
+                           InlineQueryResultArticle, InputTextMessageContent,
+                           Message)
 
 import render
 import settings
 import store
-from aiogram.types import Message
 
 router = Router()
 
@@ -76,9 +78,8 @@ async def inline_join(call: CallbackQuery, bot: Bot):
         await bot.edit_message_text(
             text=text, inline_message_id=call.inline_message_id, reply_markup=kb)
     except Exception:
-        pass
+        logging.exception("inline_join edit failed")
     await call.answer("بدأت اللعبة!")
-
 
 
 # ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية =====
@@ -107,4 +108,4 @@ async def guest_xo(message: Message):
     try:
         await message.answer_guest_query(result=result)
     except Exception:
-        pass
+        logging.exception("guest_xo answer failed")
