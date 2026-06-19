@@ -68,6 +68,25 @@ def create_random_game(x, o):
     return gid, data
 
 
+def create_inline_game(gid, x_id, x_name, o_id, o_name, inline_message_id):
+    """إنشاء لعبة إنلاين لحظة انضمام الخصم."""
+    data = {
+        "mode": "inline",
+        "board": game.board_to_str(game.new_board()),
+        "turn": "X",
+        "player_x": int(x_id), "name_x": x_name,
+        "player_o": int(o_id), "name_o": o_name,
+        "inline_message_id": inline_message_id,
+        "winner": None,
+        "finalized": False,
+        "points_awarded": False,
+        "created_at": int(time.time()),
+    }
+    db().collection("games").document(gid).set(data)
+    data["_gid"] = gid
+    return data
+
+
 def get_game(gid):
     snap = db().collection("games").document(gid).get()
     if not snap.exists:

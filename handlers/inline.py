@@ -1,10 +1,10 @@
-"""وضع الإنلاين: لعب إكس أو في أي محادثة."""
-from aiogram import Router
-from aiogram.types import (ChosenInlineResult, InlineQuery,
+"""وضع الإنلاين: لعب إكس أو أونلاين عبر يوزر البوت في أي محادثة."""
+from aiogram import Bot, F, Router
+from aiogram.types import (CallbackQuery, InlineKeyboardButton,
+                           InlineKeyboardMarkup, InlineQuery,
                            InlineQueryResultArticle, InputTextMessageContent)
 
-import game
-import keyboards
+import render
 import settings
 import store
 
@@ -15,43 +15,65 @@ def _name(user):
     return user.full_name or (user.username and f"@{user.username}") or str(user.id)
 
 
+def _join_kb(gid, creator_id):
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text="🎮 انضم للعب", callback_data=f"ij:{gid}:{creator_id}")]])
+
+
 @router.inline_query()
 async def inline_xo(query: InlineQuery):
     if not settings.get("enable_inline"):
         await query.answer([], cache_time=1, is_personal=True)
         return
+
+    store.ensure_user(query.from_user.id, _name(query.from_user))
     gid = store.new_game_id()
-    empty = game.board_to_str(game.new_board())
-    preview = (f"⭕❌ إكس أو\n❌ {_name(query.from_user)}  ضد  ⏳ بانتظار لاعب\n\n"
-               "اضغط (انضم للعب) لبدء المباراة.")
+    preview = (
+        "⭕❌ إكس أو\n"
+        f"❌ {_name(query.from_user)}  ضد  ⏳ بانتظار لاعب\n\n"
+        "اضغط (انضم للعب) لبدء المباراة."
+    )
     result = InlineQueryResultArticle(
-        id=gid, title="🎮 ابدأ لعبة إكس أو",
+        id=gid,
+        title="🎮 ابدأ لعبة إكس أو",
         description="العب ضد أي شخص في هذه المحادثة",
         input_message_content=InputTextMessageContent(message_text=preview),
-        reply_markup=keyboards.join_keyboard(gid))
-    store._pending_inline[gid] = (query.from_user.id, _name(query.from_user), empty)
+        reply_markup=_join_kb(gid, query.from_user.id),
+    )
     await query.answer([result], cache_time=1, is_personal=True)
 
 
-@router.chosen_inline_result()
-async def chosen_inline(chosen: ChosenInlineResult):
-    gid = chosen.result_id
-    pending = store._pending_inline.pop(gid, None)
-    if not pending:
+@router.callback_query(F.data.startswith("ij:"))
+async def inline_join(call: CallbackQuery, bot: Bot):
+    try:
+        _, gid, creator_id = call.data.split(":")
+        creator_id = int(creator_id)
+    except Exception:
+        await call.answer("بيانات غير صالحة.", show_alert=True)
         return
-    creator_id, creator_name, _ = pending
-    store.ensure_user(creator_id, creator_name)
-    data = {
-        "mode": "inline",
-        "board": game.board_to_str(game.new_board()),
-        "turn": "X",
-        "player_x": creator_id,
-        "name_x": creator_name,
-        "player_o": None,
-        "name_o": None,
-        "inline_message_id": chosen.inline_message_id,
-        "winner": None,
-        "finalized": False,
-        "points_awarded": False,
-    }
-    store.db().collection("games").document(gid).set(data)
+
+    joiner = call.from_user
+    if joiner.id == creator_id:
+        await call.answer("لا يمكنك اللعب ضد نفسك، انتظر صديقاً 🙂", show_alert=True)
+        return
+
+    existing = store.get_game(gid)
+    if existing and existing.get("player_o"):
+        await call.answer("اللعبة بدأت بالفعل.", show_alert=True)
+        return
+
+    store.ensure_user(joiner.id, _name(joiner))
+    creator = store.get_user(creator_id) or {}
+    creator_name = creator.get("name", "اللاعب")
+
+    data = store.create_inline_game(
+        gid, creator_id, creator_name, joiner.id, _name(joiner),
+        call.inline_message_id)
+
+    text, kb = render.render(data)
+    try:
+        await bot.edit_message_text(
+            text=text, inline_message_id=call.inline_message_id, reply_markup=kb)
+    except Exception:
+        pass
+    await call.answer("بدأت اللعبة!")
