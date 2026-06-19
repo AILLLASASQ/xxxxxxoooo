@@ -43,7 +43,7 @@ TEXTS = {
 TOGGLES = {
     "enable_pvp": "وضع المجموعات",
     "enable_vs_bot": "وضع البوت",
-    "enable_inline": "وضع الإنلاين",
+    "enable_inline": "وضع الإنلاين", "enable_guest": "وضع الضيف (Guest)",
 }
 
 

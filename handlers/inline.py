@@ -7,6 +7,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
 import render
 import settings
 import store
+from aiogram.types import Message
 
 router = Router()
 
@@ -77,3 +78,33 @@ async def inline_join(call: CallbackQuery, bot: Bot):
     except Exception:
         pass
     await call.answer("بدأت اللعبة!")
+
+
+
+# ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية =====
+@router.guest_message()
+async def guest_xo(message: Message):
+    """عند ذكر @البوت في أي محادثة، نرد ببطاقة لعبة (نفس بطاقة الإنلاين)."""
+    if not settings.get("enable_guest"):
+        return
+    caller = message.guest_bot_caller_user
+    if caller is None:
+        return
+    store.ensure_user(caller.id, _name(caller))
+    gid = store.new_game_id()
+    preview = (
+        "⭕❌ إكس أو\n"
+        f"❌ {_name(caller)}  ضد  ⏳ بانتظار لاعب\n\n"
+        "اضغط (انضم للعب) لبدء المباراة."
+    )
+    result = InlineQueryResultArticle(
+        id=gid,
+        title="🎮 ابدأ لعبة إكس أو",
+        description="العب ضد من ذكر البوت في هذه المحادثة",
+        input_message_content=InputTextMessageContent(message_text=preview),
+        reply_markup=_join_kb(gid, caller.id),
+    )
+    try:
+        await message.answer_guest_query(result=result)
+    except Exception:
+        pass

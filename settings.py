@@ -19,6 +19,7 @@ DEFAULTS = {
     "enable_pvp": True,
     "enable_vs_bot": True,
     "enable_inline": True,
+    "enable_guest": True,
     # صعوبة البوت: "easy" | "hard"
     "bot_difficulty": "hard",
     # النصوص القابلة للتعديل بالعربي
