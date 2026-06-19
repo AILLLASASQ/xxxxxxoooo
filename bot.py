@@ -25,6 +25,9 @@ dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
 
+# تنظيف عابر للطابور كل عدد من التحديثات (Piggyback)
+dp.update.outer_middleware(matchmaking.QueueCleanupMiddleware())
+
 
 async def on_startup(app: web.Application):
     init_db()
@@ -36,7 +39,8 @@ async def on_startup(app: web.Application):
 
 
 async def on_shutdown(app: web.Application):
-    await bot.delete_webhook()
+    # لا نحذف الويب هوك حتى يبقى ثابتاً وتُوقظ الرسائلُ الخدمةَ
+    await bot.session.close()
 
 
 async def health(request):
@@ -55,4 +59,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
