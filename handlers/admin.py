@@ -15,6 +15,7 @@ import settings
 import store
 
 router = Router()
+_MEDALS = ["🥇", "🥈", "🥉"]
 
 
 def is_owner(user_id):
@@ -30,27 +31,35 @@ NUMERIC = {
     "points_win": "نقاط الفوز",
     "points_draw": "نقاط التعادل",
     "points_loss": "نقاط الخسارة",
-    "daily_bonus": "مكافأة يومية",
+    "daily_bonus": "مكافأة يومية (غير مفعّلة)",
     "daily_limit": "الحد اليومي للمباريات",
     "pair_limit": "حد مباريات نفس الخصم",
+    "stale_timeout": "مهلة حذف اللعبة (ث)",
+    "turn_timeout": "مهلة الدور (ث، 0=إيقاف)",
+    "turn_check_interval": "تردد فحص المهلة (ث)",
 }
 # المفاتيح النصية
 TEXTS = {
     "text_welcome": "نص الترحيب",
-    "text_win": "نص الفوز (استخدم {name})",
+    "text_win": "نص الفوز ({name})",
     "text_draw": "نص التعادل",
+    "text_your_turn": "نص الدور ({name})",
+    "text_expired": "نص انتهاء اللعبة",
+    "text_timeout_win": "نص الفوز بالوقت ({name})",
 }
 TOGGLES = {
     "enable_pvp": "وضع المجموعات",
     "enable_vs_bot": "وضع البوت",
-    "enable_inline": "وضع الإنلاين", "enable_guest": "وضع الضيف (Guest)",
+    "enable_inline": "وضع الإنلاين",
+    "enable_guest": "وضع الضيف (Guest)",
 }
 
 
 def panel():
     rows = [
-        [InlineKeyboardButton(text="🔢 تعديل النقاط", callback_data="a:points")],
+        [InlineKeyboardButton(text="🔢 الأرقام (نقاط ومهلات)", callback_data="a:points")],
         [InlineKeyboardButton(text="📝 تعديل النصوص", callback_data="a:texts")],
+        [InlineKeyboardButton(text="🎁 الجوائز", callback_data="a:rewards")],
         [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
         [InlineKeyboardButton(text="🤖 صعوبة البوت", callback_data="a:diff")],
         [InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
@@ -88,6 +97,23 @@ async def a_texts(call: CallbackQuery):
     rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
     await call.message.edit_text(
         "اختر النص لتعديله:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.answer()
+
+
+@router.callback_query(F.data == "a:rewards")
+async def a_rewards(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    prizes = settings.get("reward_prizes") or []
+    lines = ["🎁 جوائز المراكز:\n"]
+    for i in range(3):
+        p = prizes[i] if i < len(prizes) and prizes[i] else "— (غير محددة)"
+        lines.append(f"{_MEDALS[i]} {p}")
+    lines.append("\nللتعديل:\n/setreward <المركز> <النص>")
+    await call.message.edit_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="« رجوع", callback_data="a:back")]]))
     await call.answer()
 
 
@@ -189,4 +215,3 @@ async def a_set_value(message: Message, state: FSMContext):
     settings.update(key, value)
     await state.clear()
     await message.answer(f"✅ تم التحديث: {key} = {value}", reply_markup=panel())
-
