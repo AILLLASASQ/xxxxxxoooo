@@ -398,3 +398,19 @@ def _apply_floor(gid):
         snap = ref.get()
         if snap.exists and int(snap.to_dict().get("points", 0) or 0) < floor:
             ref.update({"points": floor})
+
+
+def user_rank(user_id):
+    """يرجع (الترتيب, النقاط) للمستخدم، أو None إن لم يلعب بعد."""
+    from google.cloud.firestore_v1 import FieldFilter
+    snap = db().collection("users").document(str(user_id)).get()
+    if not snap.exists:
+        return None
+    pts = int(snap.to_dict().get("points", 0) or 0)
+    try:
+        agg = db().collection("users").where(
+            filter=FieldFilter("points", ">", pts)).count().get()
+        higher = agg[0][0].value if agg else 0
+    except Exception:
+        higher = 0
+    return higher + 1, pts

@@ -31,7 +31,7 @@ async def cmd_help(message: Message):
 
 @router.message(Command("top"))
 async def cmd_top(message: Message):
-    await message.answer(_leaderboard_text())
+    await message.answer(_leaderboard_text(message.from_user.id))
 
 
 @router.message(Command("me"))
@@ -41,7 +41,7 @@ async def cmd_me(message: Message):
 
 @router.callback_query(F.data == "board:show")
 async def cb_board(call: CallbackQuery):
-    await call.message.answer(_leaderboard_text())
+    await call.message.answer(_leaderboard_text(call.from_user.id))
     await call.answer()
 
 
@@ -52,10 +52,10 @@ async def cb_me(call: CallbackQuery):
     await call.answer()
 
 
-def _leaderboard_text():
-    rows = store.leaderboard(10)
+def _leaderboard_text(viewer_id=None):
+    top = store.top_users(3)
     prizes = settings.get("reward_prizes") or []
-    if not rows:
+    if not top:
         active = [p for p in prizes[:3] if p]
         if active:
             lines = ["🏆 لوحة الصدارة", "لا يوجد لاعبون بعد.", "", "🎁 الجوائز بانتظار الفائزين:"]
@@ -64,13 +64,24 @@ def _leaderboard_text():
                     lines.append(f"{_MEDALS[i]} {p}")
             return "\n".join(lines)
         return "لا يوجد لاعبون بعد."
-    lines = ["🏆 لوحة الصدارة\n"]
-    for i, (name, pts) in enumerate(rows):
-        prefix = _MEDALS[i] if i < 3 else f"{i + 1}."
-        line = f"{prefix} {name} — {pts} نقطة"
-        if i < 3 and i < len(prizes) and prizes[i]:
+
+    lines = ["🏆 لوحة الصدارة — أعلى 3\n"]
+    top_ids = set()
+    for i, u in enumerate(top):
+        top_ids.add(str(u["id"]))
+        line = f"{_MEDALS[i]} {u['name']} — {u['points']} نقطة"
+        if i < len(prizes) and prizes[i]:
             line += f"  🎁 {prizes[i]}"
         lines.append(line)
+
+    if viewer_id is not None and str(viewer_id) not in top_ids:
+        r = store.user_rank(viewer_id)
+        lines.append("➖➖➖➖➖")
+        if r:
+            rank, pts = r
+            lines.append(f"📍 ترتيبك: #{rank} — {pts} نقطة")
+        else:
+            lines.append("📍 العب مباراة لتدخل التصنيف!")
     return "\n".join(lines)
 
 
