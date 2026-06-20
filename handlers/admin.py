@@ -12,7 +12,7 @@ import settings
 import store
 
 router = Router()
-_MEDALS = ["🥇", "🥈", "🥉"]
+_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
 
 
 def is_owner(user_id):
@@ -115,7 +115,7 @@ async def a_rewards(call: CallbackQuery):
         return await call.answer()
     prizes = settings.get("reward_prizes") or []
     rows = []
-    for i in range(3):
+    for i in range(5):
         cur = prizes[i] if i < len(prizes) and prizes[i] else "غير محددة"
         rows.append([InlineKeyboardButton(
             text=f"{_MEDALS[i]} {cur}", callback_data=f"setprize:{i + 1}")])
@@ -235,7 +235,7 @@ async def a_set_value(message: Message, state: FSMContext):
     if key.startswith("__prize_"):
         rank = int(key.rsplit("_", 1)[-1])
         prizes = list(settings.get("reward_prizes") or [])
-        while len(prizes) < 3:
+        while len(prizes) < 5:
             prizes.append("")
         prizes[rank - 1] = "" if value.strip() in ("-", "") else value.strip()
         settings.update("reward_prizes", prizes)

@@ -66,9 +66,10 @@ async def process_coronation(bot):
     pending = store.pop_pending_coronation()
     if not pending or not pending.get("top"):
         return
-    medals = ["🥇 المركز الأول", "🥈 المركز الثاني", "🥉 المركز الثالث"]
+    medals = ["🥇 المركز الأول", "🥈 المركز الثاني", "🥉 المركز الثالث",
+              "4️⃣ المركز الرابع", "5️⃣ المركز الخامس"]
     lines = [f"🏆 انتهى الموسم {pending.get('number', '؟')}! الفائزون:\n"]
-    for i, c in enumerate(pending["top"][:3]):
+    for i, c in enumerate(pending["top"][:5]):
         uid = c.get("id")
         uname = ""
         try:

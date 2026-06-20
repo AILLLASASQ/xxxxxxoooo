@@ -12,8 +12,8 @@ import config
 import settings
 
 router = Router()
-_RANKS = 3
-_MEDALS = ["🥇", "🥈", "🥉"]
+_RANKS = 5
+_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
 
 
 @router.message(Command("setreward"), F.from_user.id == config.OWNER_ID)

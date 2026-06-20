@@ -98,10 +98,13 @@ def _leaderboard_text(viewer_id=None):
     lines = [f"🏆 لوحة الشرف (الموسم {season.get('number', 1)}) — أعلى {size}",
              f"⏳ التصفير خلال: {remaining}"]
 
-    if any(prizes[:3]):
-        parts = [f"{_RANK[i]} {prizes[i]}" for i in range(3)
-                 if i < len(prizes) and prizes[i]]
-        lines += ["", "🎁 الجوائز:", "   ".join(parts)]
+    _plabels = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    _shown = [(i, prizes[i]) for i in range(min(5, len(prizes))) if prizes[i]]
+    if _shown:
+        lines.append("")
+        lines.append("🎁 الجوائز:")
+        for _i, _p in _shown:
+            lines.append(f"{_plabels[_i]} {_p}")
 
     lines.append("")
     if not top:

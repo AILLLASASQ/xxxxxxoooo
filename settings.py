@@ -17,7 +17,7 @@ DEFAULTS = {
     "turn_timeout": 15,
     "turn_check_interval": 3,
     "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
-    "reward_prizes": ["", "", ""],
+    "reward_prizes": ["", "", "", "", ""],
     # لوحة الشرف والمواسم
     "leaderboard_size": 5,
     "season_days": 7,
