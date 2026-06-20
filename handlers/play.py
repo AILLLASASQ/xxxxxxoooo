@@ -88,7 +88,7 @@ async def cb_bot_start(call: CallbackQuery):
         return
     uid = call.from_user.id
     if moderation.at_daily_limit(uid, int(settings.get("daily_limit") or 0)):
-        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً.", show_alert=True)
+        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً", show_alert=True)
         return
     store.ensure_user(uid, _name(call.from_user))
     gid, data = store.create_game(
@@ -109,7 +109,7 @@ async def cb_join(call: CallbackQuery, bot: Bot):
     gid = call.data.split(":", 1)[1]
     uid = call.from_user.id
     if moderation.at_daily_limit(uid, int(settings.get("daily_limit") or 0)):
-        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً.", show_alert=True)
+        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً", show_alert=True)
         return
     store.ensure_user(uid, _name(call.from_user))
     ok, data, reason = store.join_game(gid, uid, _name(call.from_user))
@@ -139,7 +139,7 @@ async def cb_move(call: CallbackQuery, bot: Bot):
         if not allowed and capped_user == call.from_user.id:
             await call.answer(
                 "انتهت اللعبة 🎯\n\nبلغت الحد الأقصى من النقاط ضد هذا الخصم اليوم.\n"
-                "العب مع أشخاص آخرين! 🔁",
+                "العب مع أشخاص آخرين ل كسب النقاط 🔁",
                 show_alert=True)
         else:
             await call.answer("انتهت اللعبة 🎯")
