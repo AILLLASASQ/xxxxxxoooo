@@ -62,12 +62,12 @@ BOT_POINTS = {
 
 def panel():
     rows = [
-        [InlineKeyboardButton(text="🔢 الأرقام (نقاط ومهلات)", callback_data="a:points")],
-        [InlineKeyboardButton(text="📝 تعديل النصوص", callback_data="a:texts")],
-        [InlineKeyboardButton(text="🎁 الجوائز", callback_data="a:rewards")],
-        [InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
-        [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
-        [InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
+        [InlineKeyboardButton(text="🔢 الأرقام", callback_data="a:points"),
+         InlineKeyboardButton(text="📝 النصوص", callback_data="a:texts")],
+        [InlineKeyboardButton(text="🎁 الجوائز", callback_data="a:rewards"),
+         InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
+        [InlineKeyboardButton(text="🎚️ الأوضاع", callback_data="a:toggles"),
+         InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
         [InlineKeyboardButton(text="🏁 إنهاء الموسم الآن", callback_data="a:endseason")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)

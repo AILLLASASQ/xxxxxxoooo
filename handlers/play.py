@@ -39,31 +39,13 @@ async def _update_view(bot: Bot, call: CallbackQuery, data):
 
 
 def _finalize_points(gid, data):
-    """احتساب النقاط مع حدّ تجميع النقاط من نفس الخصم (اتجاهي، انتصارات فقط).
+    """يحتسب النقاط (السقف الزوجي مُطبَّق داخل store.award_result).
 
-    يرجع (allowed, capped_user): capped_user هو من بلغ حدّه (لتنبيهه) أو None.
+    يرجع (allowed, capped_user): من بلغ حدّه ضد الخصم أو None.
     """
-    if data.get("mode") == "bot":
-        store.award_result(gid)
-        return True, None
-
-    px, po = data.get("player_x"), data.get("player_o")
-    winner = data.get("winner")
-    cap = int(settings.get("pair_points_limit") or 0)
-
-    if not cap or winner not in ("X", "O"):
-        store.award_result(gid, allow_points=True)
-        return True, None
-
-    earner, opp = (px, po) if winner == "X" else (po, px)
-
-    if earner and opp and moderation.pair_points(earner, opp) >= cap:
-        store.award_result(gid, allow_points=False)
-        return False, earner
-
-    store.award_result(gid, allow_points=True)
-    moderation.add_pair_points(earner, opp, settings.get("points_win"))
-    return True, None
+    info = store.award_result(gid)
+    capped = info.get("capped_user")
+    return (capped is None), capped
 
 
 @router.message(Command("xo"))
@@ -71,10 +53,15 @@ async def cmd_xo(message: Message):
     if not settings.get("enable_pvp"):
         await message.answer("وضع المجموعات معطّل حالياً.")
         return
-    store.ensure_user(message.from_user.id, _name(message.from_user))
+    uid = message.from_user.id
+    if moderation.at_daily_limit(uid, int(settings.get("daily_limit") or 0)):
+        await message.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً.")
+        return
+    store.ensure_user(uid, _name(message.from_user))
     gid, data = store.create_game(
-        mode="pvp", player_x=message.from_user.id, name_x=_name(message.from_user),
+        mode="pvp", player_x=uid, name_x=_name(message.from_user),
         chat_id=message.chat.id)
+    moderation.bump_daily_match(uid)
     text, _ = render.render(data)
     sent = await message.answer(text, reply_markup=keyboards.join_keyboard(gid))
     store.db().collection("games").document(gid).update({"message_id": sent.message_id})
@@ -99,10 +86,15 @@ async def cb_bot_start(call: CallbackQuery):
     if not settings.get("enable_vs_bot"):
         await call.answer("وضع البوت معطّل حالياً.", show_alert=True)
         return
-    store.ensure_user(call.from_user.id, _name(call.from_user))
+    uid = call.from_user.id
+    if moderation.at_daily_limit(uid, int(settings.get("daily_limit") or 0)):
+        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً.", show_alert=True)
+        return
+    store.ensure_user(uid, _name(call.from_user))
     gid, data = store.create_game(
-        mode="bot", player_x=call.from_user.id, name_x=_name(call.from_user),
+        mode="bot", player_x=uid, name_x=_name(call.from_user),
         chat_id=call.message.chat.id, difficulty=diff)
+    moderation.bump_daily_match(uid)
     data["player_o"] = 0
     data["name_o"] = "🤖 البوت"
     store.db().collection("games").document(gid).update(
@@ -115,11 +107,16 @@ async def cb_bot_start(call: CallbackQuery):
 @router.callback_query(F.data.startswith("j:"))
 async def cb_join(call: CallbackQuery, bot: Bot):
     gid = call.data.split(":", 1)[1]
-    store.ensure_user(call.from_user.id, _name(call.from_user))
-    ok, data, reason = store.join_game(gid, call.from_user.id, _name(call.from_user))
+    uid = call.from_user.id
+    if moderation.at_daily_limit(uid, int(settings.get("daily_limit") or 0)):
+        await call.answer("🌙 بلغت حدّك اليومي من المباريات. عُد غداً.", show_alert=True)
+        return
+    store.ensure_user(uid, _name(call.from_user))
+    ok, data, reason = store.join_game(gid, uid, _name(call.from_user))
     if not ok:
         await call.answer(reason, show_alert=True)
         return
+    moderation.bump_daily_match(uid)
     await _update_view(bot, call, data)
     await call.answer("انضممت! ابدأ اللعب.")
 

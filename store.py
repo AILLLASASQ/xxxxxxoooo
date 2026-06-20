@@ -9,6 +9,7 @@ import time
 from google.cloud.firestore_v1 import Increment, transactional
 
 import game
+import moderation
 import settings
 from firebase_db import db
 
@@ -217,25 +218,42 @@ def ensure_user(user_id, name):
 def award_result(gid, allow_points=True):
     """احتساب نقاط نتيجة اللعبة مرة واحدة فقط (idempotent).
 
-    تستخدم علم points_awarded داخل مستند اللعبة لمنع الاحتساب المزدوج.
-    إذا allow_points=False (تجاوز حد مباريات نفس الخصم) تُختم اللعبة بلا نقاط.
+    - يطبّق سقف نقاط الخصم (pair_points_limit) على كل مسارات الفوز
+      (حركة عادية أو فوز بالوقت) — انتصارات فقط، اتجاهي.
+    - allow_points=False يختم اللعبة بلا نقاط (تجاوز خارجي).
+    يرجع dict: {"awarded": bool, "capped_user": id|None}.
     """
     gref = db().collection("games").document(gid)
-    applied = {"done": False}
+    info = {"awarded": False, "capped_user": None}
+
+    d0 = get_game(gid)
+    if not d0 or not d0.get("finalized"):
+        return info
+    mode = d0.get("mode")
+    winner = d0.get("winner")
+    earner = opp = None
+    capped = not allow_points
+    if allow_points and mode != "bot" and winner in ("X", "O"):
+        cap = int(settings.get("pair_points_limit") or 0)
+        px, po = d0.get("player_x"), d0.get("player_o")
+        earner, opp = (px, po) if winner == "X" else (po, px)
+        if cap and earner and opp and moderation.pair_points(earner, opp) >= cap:
+            capped = True
+            info["capped_user"] = earner
 
     @transactional
     def _txn(txn):
+        info["awarded"] = False
         snap = gref.get(transaction=txn)
         if not snap.exists:
             return
         d = snap.to_dict()
         if not d.get("finalized") or d.get("points_awarded"):
             return
-        if not allow_points:
+        if capped:
             txn.update(gref, {"points_awarded": True})
             return
         if d.get("mode") == "bot":
-            # ضد البوت: نقاط الفوز حسب الصعوبة
             diff = d.get("difficulty") or "hard"
             wp = settings.get(f"bot_win_{diff}")
             wp = int(wp) if wp is not None else settings.get("points_win")
@@ -245,11 +263,14 @@ def award_result(gid, allow_points=True):
             if d.get("player_o"):
                 _apply_points(txn, d["player_o"], d["winner"], human_mark="O")
         txn.update(gref, {"points_awarded": True})
-        applied["done"] = True
+        info["awarded"] = True
 
     _txn(db().transaction())
-    if applied["done"]:
+    if info["awarded"]:
         _apply_floor(gid)
+        if mode != "bot" and winner in ("X", "O") and earner and opp:
+            moderation.add_pair_points(earner, opp, settings.get("points_win"))
+    return info
 
 
 def _apply_points(txn, user_id, result, human_mark, win_pts=None):
