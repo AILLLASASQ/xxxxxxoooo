@@ -32,7 +32,7 @@ NUMERIC = {
     "points_draw": "نقاط التعادل",
     "points_loss": "نقاط الخسارة",
     "daily_limit": "الحد اليومي للمباريات",
-    "pair_limit": "حد مباريات نفس الخصم",
+    "pair_points_limit": "حد نقاط نفس الخصم/يوم",
     "stale_timeout": "مهلة حذف اللعبة (ث)",
     "turn_timeout": "مهلة الدور (ث، 0=إيقاف)",
     "turn_check_interval": "تردد فحص المهلة (ث)",

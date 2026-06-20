@@ -7,13 +7,13 @@ DEFAULTS = {
     "points_loss": 0,
     "daily_bonus": 5,
     "daily_limit": 150,
-    "pair_limit": 3,
+    # حدّ تجميع النقاط من نفس الخصم يومياً (0=بلا حد). 9 ≈ 3 انتصارات
+    "pair_points_limit": 9,
     "stale_timeout": 120,
     "text_expired": "⌛ انتهت المباراة",
     "turn_timeout": 15,
     "turn_check_interval": 3,
     "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
-    # جوائز المراكز (هدايا حقيقية) — نص لكل مركز، يضبطها المالك عبر /setreward
     "reward_prizes": ["", "", ""],
     "enable_pvp": True,
     "enable_vs_bot": True,
