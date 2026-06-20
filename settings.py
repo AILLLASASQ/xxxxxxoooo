@@ -4,10 +4,10 @@ from firebase_db import db
 DEFAULTS = {
     "points_win": 3,
     "points_draw": 1,
-    "points_loss": 0,
+    "points_loss": -1,
+    "points_floor": -50,
     "daily_bonus": 5,
     "daily_limit": 150,
-    # حدّ تجميع النقاط من نفس الخصم يومياً (0=بلا حد). 9 ≈ 3 انتصارات
     "pair_points_limit": 9,
     "stale_timeout": 120,
     "text_expired": "⌛ انتهت المباراة",

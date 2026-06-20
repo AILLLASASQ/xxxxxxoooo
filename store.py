@@ -220,6 +220,7 @@ def award_result(gid, allow_points=True):
     إذا allow_points=False (تجاوز حد مباريات نفس الخصم) تُختم اللعبة بلا نقاط.
     """
     gref = db().collection("games").document(gid)
+    applied = {"done": False}
 
     @transactional
     def _txn(txn):
@@ -240,8 +241,11 @@ def award_result(gid, allow_points=True):
             if d.get("player_o"):
                 _apply_points(txn, d["player_o"], d["winner"], human_mark="O")
         txn.update(gref, {"points_awarded": True})
+        applied["done"] = True
 
     _txn(db().transaction())
+    if applied["done"]:
+        _apply_floor(gid)
 
 
 def _apply_points(txn, user_id, result, human_mark):
@@ -368,3 +372,24 @@ def add_bonus(user_id, pts):
     """يضيف نقاطاً لمستخدم (مكافأة)."""
     db().collection("users").document(str(user_id)).set(
         {"points": Increment(int(pts))}, merge=True)
+
+
+def _apply_floor(gid):
+    """يمنع نزول نقاط أي لاعب في اللعبة تحت points_floor (أرضية الرصيد)."""
+    floor = settings.get("points_floor")
+    if floor is None:
+        return
+    floor = int(floor)
+    d = get_game(gid)
+    if not d:
+        return
+    ids = [d.get("player_x")]
+    if d.get("mode") != "bot" and d.get("player_o"):
+        ids.append(d.get("player_o"))
+    for uid in ids:
+        if not uid:
+            continue
+        ref = db().collection("users").document(str(uid))
+        snap = ref.get()
+        if snap.exists and int(snap.to_dict().get("points", 0) or 0) < floor:
+            ref.update({"points": floor})

@@ -31,6 +31,7 @@ NUMERIC = {
     "points_win": "نقاط الفوز",
     "points_draw": "نقاط التعادل",
     "points_loss": "نقاط الخسارة",
+    "points_floor": "أدنى رصيد (أرضية)",
     "daily_limit": "الحد اليومي للمباريات",
     "pair_points_limit": "حد نقاط نفس الخصم/يوم",
     "stale_timeout": "مهلة حذف اللعبة (ث)",
