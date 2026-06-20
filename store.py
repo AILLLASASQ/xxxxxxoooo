@@ -348,3 +348,23 @@ def fetch_timed_out_games(limit=50):
             d["_gid"] = s.id
             out.append(d)
     return out
+
+
+# ---------- مكافأة المتصدّرين ----------
+def top_users(n=3):
+    """يرجع أعلى n لاعبين مع معرّفاتهم وأسمائهم ونقاطهم."""
+    q = (db().collection("users")
+         .order_by("points", direction="DESCENDING")
+         .limit(int(n)))
+    out = []
+    for s in q.stream():
+        d = s.to_dict() or {}
+        out.append({"id": s.id, "name": d.get("name", "?"),
+                    "points": int(d.get("points", 0) or 0)})
+    return out
+
+
+def add_bonus(user_id, pts):
+    """يضيف نقاطاً لمستخدم (مكافأة)."""
+    db().collection("users").document(str(user_id)).set(
+        {"points": Increment(int(pts))}, merge=True)

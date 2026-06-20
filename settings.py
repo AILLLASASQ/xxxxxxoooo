@@ -2,29 +2,24 @@
 from firebase_db import db
 
 DEFAULTS = {
-    # النقاط
     "points_win": 3,
     "points_draw": 1,
     "points_loss": 0,
     "daily_bonus": 5,
-    # حماية ضد الـfarming
     "daily_limit": 150,
     "pair_limit": 3,
-    # تنظيف الألعاب العالقة (سقف صارم منذ الإنشاء)
     "stale_timeout": 120,
     "text_expired": "⌛ انتهت المباراة",
-    # مؤقّت الدور (15 ثانية، 0 = تعطيل)
     "turn_timeout": 15,
     "turn_check_interval": 3,
     "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
-    # تفعيل/تعطيل الأوضاع
+    # مكافأة المراكز: [الأول, الثاني, الثالث] — يضبطها المالك
+    "reward_top": [50, 30, 20],
     "enable_pvp": True,
     "enable_vs_bot": True,
     "enable_inline": True,
     "enable_guest": True,
-    # صعوبة البوت
     "bot_difficulty": "hard",
-    # النصوص العربية
     "text_welcome": "أهلاً بك في لعبة إكس أو! ⭕❌\nاختر وضع اللعب من الأزرار.",
     "text_win": "🎉 فاز اللاعب {name}!",
     "text_draw": "🤝 تعادل!",

@@ -14,7 +14,7 @@ import config
 import settings
 import turns
 from firebase_db import init_db
-from handlers import admin, common, inline, matchmaking, play
+from handlers import admin, common, inline, matchmaking, play, rewards
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,12 +22,12 @@ bot = Bot(token=config.BOT_TOKEN,
           default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(admin.router)
+dp.include_router(rewards.router)
 dp.include_router(common.router)
 dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
 
-# تنظيف عابر للطابور + تنظيف الألعاب العالقة (Piggyback)
 dp.update.outer_middleware(matchmaking.QueueCleanupMiddleware())
 dp.update.outer_middleware(cleanup.StaleGameCleanupMiddleware())
 
