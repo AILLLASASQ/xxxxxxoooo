@@ -8,6 +8,7 @@ import settings
 import store
 
 router = Router()
+_MEDALS = ["🥇", "🥈", "🥉"]
 
 
 def _display_name(user):
@@ -53,13 +54,23 @@ async def cb_me(call: CallbackQuery):
 
 def _leaderboard_text():
     rows = store.leaderboard(10)
+    prizes = settings.get("reward_prizes") or []
     if not rows:
+        active = [p for p in prizes[:3] if p]
+        if active:
+            lines = ["🏆 لوحة الصدارة", "لا يوجد لاعبون بعد.", "", "🎁 الجوائز بانتظار الفائزين:"]
+            for i, p in enumerate(prizes[:3]):
+                if p:
+                    lines.append(f"{_MEDALS[i]} {p}")
+            return "\n".join(lines)
         return "لا يوجد لاعبون بعد."
-    medals = ["🥇", "🥈", "🥉"]
     lines = ["🏆 لوحة الصدارة\n"]
     for i, (name, pts) in enumerate(rows):
-        prefix = medals[i] if i < 3 else f"{i + 1}."
-        lines.append(f"{prefix} {name} — {pts} نقطة")
+        prefix = _MEDALS[i] if i < 3 else f"{i + 1}."
+        line = f"{prefix} {name} — {pts} نقطة"
+        if i < 3 and i < len(prizes) and prizes[i]:
+            line += f"  🎁 {prizes[i]}"
+        lines.append(line)
     return "\n".join(lines)
 
 

@@ -13,8 +13,8 @@ DEFAULTS = {
     "turn_timeout": 15,
     "turn_check_interval": 3,
     "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
-    # مكافأة المراكز: [الأول, الثاني, الثالث] — يضبطها المالك
-    "reward_top": [50, 30, 20],
+    # جوائز المراكز (هدايا حقيقية) — نص لكل مركز، يضبطها المالك عبر /setreward
+    "reward_prizes": ["", "", ""],
     "enable_pvp": True,
     "enable_vs_bot": True,
     "enable_inline": True,
