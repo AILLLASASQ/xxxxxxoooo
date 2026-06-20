@@ -53,6 +53,11 @@ TOGGLES = {
     "enable_inline": "وضع الإنلاين",
     "enable_guest": "وضع الضيف (Guest)",
 }
+BOT_POINTS = {
+    "bot_win_easy": "فوز سهل",
+    "bot_win_medium": "فوز متوسط",
+    "bot_win_hard": "فوز صعب",
+}
 
 
 def panel():
@@ -61,7 +66,7 @@ def panel():
         [InlineKeyboardButton(text="📝 تعديل النصوص", callback_data="a:texts")],
         [InlineKeyboardButton(text="🎁 الجوائز", callback_data="a:rewards")],
         [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
-        [InlineKeyboardButton(text="🤖 صعوبة البوت", callback_data="a:diff")],
+        [InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
         [InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
         [InlineKeyboardButton(text="♻️ تصفير لوحة الصدارة", callback_data="a:reset")],
     ]
@@ -141,14 +146,18 @@ async def a_toggle_set(call: CallbackQuery):
     await a_toggles(call)
 
 
-@router.callback_query(F.data == "a:diff")
-async def a_diff(call: CallbackQuery):
+@router.callback_query(F.data == "a:botpts")
+async def a_botpts(call: CallbackQuery):
     if not is_owner(call.from_user.id):
         return await call.answer()
-    cur = settings.get("bot_difficulty")
-    new = "easy" if cur == "hard" else "hard"
-    settings.update("bot_difficulty", new)
-    await call.answer(f"صعوبة البوت الآن: {new}", show_alert=True)
+    rows = [[InlineKeyboardButton(
+        text=f"{label}: {settings.get(key)}", callback_data=f"set:{key}")]
+        for key, label in BOT_POINTS.items()]
+    rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
+    await call.message.edit_text(
+        "نقاط الفوز حسب مستوى البوت:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.answer()
 
 
 @router.callback_query(F.data == "a:stats")
@@ -193,7 +202,7 @@ async def a_set_start(call: CallbackQuery, state: FSMContext):
     key = call.data.split(":", 1)[1]
     await state.update_data(key=key)
     await state.set_state(EditState.waiting_value)
-    label = NUMERIC.get(key) or TEXTS.get(key) or key
+    label = NUMERIC.get(key) or TEXTS.get(key) or BOT_POINTS.get(key) or key
     await call.message.answer(f"أرسل القيمة الجديدة لـ: {label}")
     await call.answer()
 
@@ -206,7 +215,7 @@ async def a_set_value(message: Message, state: FSMContext):
     data = await state.get_data()
     key = data["key"]
     value = message.text
-    if key in NUMERIC:
+    if key in NUMERIC or key in BOT_POINTS:
         try:
             value = int(value)
         except ValueError:

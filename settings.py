@@ -6,6 +6,10 @@ DEFAULTS = {
     "points_draw": 1,
     "points_loss": -1,
     "points_floor": -50,
+    # نقاط الفوز حسب مستوى البوت (اللاعب يختار المستوى عند اللعب)
+    "bot_win_easy": 1,
+    "bot_win_medium": 2,
+    "bot_win_hard": 3,
     "daily_bonus": 5,
     "daily_limit": 150,
     "pair_points_limit": 9,
@@ -19,7 +23,6 @@ DEFAULTS = {
     "enable_vs_bot": True,
     "enable_inline": True,
     "enable_guest": True,
-    "bot_difficulty": "hard",
     "text_welcome": "أهلاً بك في لعبة إكس أو! ⭕❌\nاختر وضع اللعب من الأزرار.",
     "text_win": "🎉 فاز اللاعب {name}!",
     "text_draw": "🤝 تعادل!",

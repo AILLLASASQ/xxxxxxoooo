@@ -50,11 +50,16 @@ def _minimax(board, ai, human, is_ai_turn):
     return max(scores) if is_ai_turn else min(scores)
 
 
+# نسبة الحركة العشوائية لكل مستوى (الباقي = حركة مثالية minimax)
+_RANDOM_CHANCE = {"easy": 0.6, "medium": 0.25, "hard": 0.0}
+
+
 def best_move(board, ai_mark, human_mark, difficulty="hard"):
     moves = available_moves(board)
     if not moves:
         return None
-    if difficulty == "easy" and random.random() < 0.5:
+    chance = _RANDOM_CHANCE.get(difficulty, 0.0)
+    if chance and random.random() < chance:
         return random.choice(moves)
     best_score = -2
     chosen = moves[0]

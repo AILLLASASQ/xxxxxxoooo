@@ -30,6 +30,15 @@ def join_keyboard(game_id):
     )
 
 
+def bot_difficulty_menu():
+    """اختيار مستوى صعوبة البوت قبل بدء اللعب."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟢 سهل", callback_data="bot:easy")],
+        [InlineKeyboardButton(text="🟡 متوسط", callback_data="bot:medium")],
+        [InlineKeyboardButton(text="🔴 صعب", callback_data="bot:hard")],
+    ])
+
+
 def main_menu():
     """قائمة اختيار الوضع في الخاص."""
     return InlineKeyboardMarkup(
@@ -40,4 +49,3 @@ def main_menu():
             [InlineKeyboardButton(text="📊 نقاطي", callback_data="me:show")],
         ]
     )
-

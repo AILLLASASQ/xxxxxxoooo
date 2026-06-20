@@ -26,11 +26,12 @@ def _turn_deadline():
 
 
 def create_game(mode, player_x, name_x, chat_id=None, message_id=None,
-                inline_message_id=None):
+                inline_message_id=None, difficulty=None):
     """إنشاء مستند لعبة جديدة وإرجاع (game_id, data)."""
     gid = new_game_id()
     data = {
         "mode": mode,                 # "pvp" | "bot" | "inline"
+        "difficulty": difficulty,
         "board": game.board_to_str(game.new_board()),
         "turn": "X",
         "player_x": player_x,
@@ -188,7 +189,7 @@ def bot_move(gid):
         return d
 
     board = game.board_from_str(d["board"])
-    move = game.best_move(board, "O", "X", settings.get("bot_difficulty"))
+    move = game.best_move(board, "O", "X", d.get("difficulty") or "hard")
     if move is None:
         return d
     board[move] = "O"
@@ -234,8 +235,11 @@ def award_result(gid, allow_points=True):
             txn.update(gref, {"points_awarded": True})
             return
         if d.get("mode") == "bot":
-            # ضد البوت: نحتسب للاعب البشري (X) فقط
-            _apply_points(txn, d["player_x"], d["winner"], human_mark="X")
+            # ضد البوت: نقاط الفوز حسب الصعوبة
+            diff = d.get("difficulty") or "hard"
+            wp = settings.get(f"bot_win_{diff}")
+            wp = int(wp) if wp is not None else settings.get("points_win")
+            _apply_points(txn, d["player_x"], d["winner"], human_mark="X", win_pts=wp)
         else:
             _apply_points(txn, d["player_x"], d["winner"], human_mark="X")
             if d.get("player_o"):
@@ -248,12 +252,13 @@ def award_result(gid, allow_points=True):
         _apply_floor(gid)
 
 
-def _apply_points(txn, user_id, result, human_mark):
+def _apply_points(txn, user_id, result, human_mark, win_pts=None):
     ref = db().collection("users").document(str(user_id))
     if result == "draw":
         pts, field = settings.get("points_draw"), "draws"
     elif result == human_mark:
-        pts, field = settings.get("points_win"), "wins"
+        pts = win_pts if win_pts is not None else settings.get("points_win")
+        field = "wins"
     else:
         pts, field = settings.get("points_loss"), "losses"
     txn.set(ref, {

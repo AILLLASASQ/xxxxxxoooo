@@ -51,7 +51,6 @@ def _finalize_points(gid, data):
     winner = data.get("winner")
     cap = int(settings.get("pair_points_limit") or 0)
 
-    # لا حدّ، أو ليس فوزاً (تعادل) → احتساب عادي
     if not cap or winner not in ("X", "O"):
         store.award_result(gid, allow_points=True)
         return True, None
@@ -86,10 +85,24 @@ async def cb_vs_bot(call: CallbackQuery):
     if not settings.get("enable_vs_bot"):
         await call.answer("وضع البوت معطّل حالياً.", show_alert=True)
         return
+    await call.message.edit_text(
+        "🤖 اختر مستوى الصعوبة:", reply_markup=keyboards.bot_difficulty_menu())
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("bot:"))
+async def cb_bot_start(call: CallbackQuery):
+    diff = call.data.split(":", 1)[1]
+    if diff not in ("easy", "medium", "hard"):
+        await call.answer()
+        return
+    if not settings.get("enable_vs_bot"):
+        await call.answer("وضع البوت معطّل حالياً.", show_alert=True)
+        return
     store.ensure_user(call.from_user.id, _name(call.from_user))
     gid, data = store.create_game(
         mode="bot", player_x=call.from_user.id, name_x=_name(call.from_user),
-        chat_id=call.message.chat.id)
+        chat_id=call.message.chat.id, difficulty=diff)
     data["player_o"] = 0
     data["name_o"] = "🤖 البوت"
     store.db().collection("games").document(gid).update(
