@@ -11,8 +11,12 @@ DEFAULTS = {
     "daily_limit": 150,
     "pair_limit": 3,
     # تنظيف الألعاب العالقة (سقف صارم منذ الإنشاء)
-    "stale_timeout": 120,   # ثوانٍ قبل مسح أي لعبة غير منتهية (0 = تعطيل)
+    "stale_timeout": 120,
     "text_expired": "⌛ انتهت المباراة",
+    # مؤقّت الدور (15 ثانية، 0 = تعطيل)
+    "turn_timeout": 15,
+    "turn_check_interval": 3,
+    "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
     # تفعيل/تعطيل الأوضاع
     "enable_pvp": True,
     "enable_vs_bot": True,

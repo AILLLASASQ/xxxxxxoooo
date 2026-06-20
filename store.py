@@ -20,6 +20,11 @@ def new_game_id():
     return secrets.token_urlsafe(6)
 
 
+def _turn_deadline():
+    tt = int(settings.get("turn_timeout") or 0)
+    return (int(time.time()) + tt) if tt > 0 else None
+
+
 def create_game(mode, player_x, name_x, chat_id=None, message_id=None,
                 inline_message_id=None):
     """إنشاء مستند لعبة جديدة وإرجاع (game_id, data)."""
@@ -54,6 +59,7 @@ def create_random_game(x, o):
         "mode": "random",
         "board": game.board_to_str(game.new_board()),
         "turn": "X",
+        "turn_deadline": _turn_deadline(),
         "player_x": int(x["id"]), "name_x": x["name"],
         "player_o": int(o["id"]), "name_o": o["name"],
         "x_chat_id": int(x["chat_id"]), "x_msg_id": int(x["msg_id"]),
@@ -74,6 +80,7 @@ def create_inline_game(gid, x_id, x_name, o_id, o_name, inline_message_id):
         "mode": "inline",
         "board": game.board_to_str(game.new_board()),
         "turn": "X",
+        "turn_deadline": _turn_deadline(),
         "player_x": int(x_id), "name_x": x_name,
         "player_o": int(o_id), "name_o": o_name,
         "inline_message_id": inline_message_id,
@@ -111,9 +118,11 @@ def join_game(gid, player_o, name_o):
             return False, d, "اللعبة مكتملة بالفعل."
         if d.get("player_x") == player_o:
             return False, d, "لا يمكنك اللعب ضد نفسك."
-        txn.update(ref, {"player_o": player_o, "name_o": name_o})
+        _dl = _turn_deadline()
+        txn.update(ref, {"player_o": player_o, "name_o": name_o, "turn_deadline": _dl})
         d["player_o"] = player_o
         d["name_o"] = name_o
+        d["turn_deadline"] = _dl
         d["_gid"] = gid
         return True, d, ""
 
@@ -160,6 +169,8 @@ def apply_move(gid, user_id, cell):
         if result:
             update["winner"] = result
             update["finalized"] = True
+        else:
+            update["turn_deadline"] = _turn_deadline()
         txn.update(ref, update)
 
         d.update(update)
@@ -288,3 +299,52 @@ def delete_game(gid):
         db().collection("games").document(gid).delete()
     except Exception:
         pass
+
+
+# ---------- مهلة الدور (timeout) ----------
+def finalize_timeout(gid):
+    """ينهي مباراة بشرية لانتهاء وقت صاحب الدور (transactional, آمن من السباق).
+
+    يرجع (ok, data). ok=True فقط إذا أُنهيت فعلاً بسبب التايم آوت.
+    """
+    ref = db().collection("games").document(gid)
+
+    @transactional
+    def _txn(txn):
+        snap = ref.get(transaction=txn)
+        if not snap.exists:
+            return False, None
+        d = snap.to_dict()
+        if d.get("finalized") or d.get("mode") == "bot" or not d.get("player_o"):
+            return False, d
+        deadline = d.get("turn_deadline")
+        if not deadline or int(time.time()) <= int(deadline):
+            return False, d
+        win = "O" if d.get("turn") == "X" else "X"
+        txn.update(ref, {"winner": win, "finalized": True, "win_by_timeout": True})
+        d["winner"] = win
+        d["finalized"] = True
+        d["win_by_timeout"] = True
+        d["_gid"] = gid
+        return True, d
+
+    return _txn(db().transaction())
+
+
+def fetch_timed_out_games(limit=50):
+    """يرجع المباريات البشرية غير المنتهية التي تجاوزت مهلة الدور (للمراقب)."""
+    from google.cloud.firestore_v1 import FieldFilter
+    now = int(time.time())
+    out = []
+    q = (db().collection("games")
+         .where(filter=FieldFilter("finalized", "==", False))
+         .limit(int(limit)))
+    for s in q.stream():
+        d = s.to_dict() or {}
+        if d.get("mode") == "bot" or not d.get("player_o"):
+            continue
+        dl = d.get("turn_deadline")
+        if dl and now > int(dl):
+            d["_gid"] = s.id
+            out.append(d)
+    return out

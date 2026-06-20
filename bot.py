@@ -12,6 +12,7 @@ from aiohttp import web
 import cleanup
 import config
 import settings
+import turns
 from firebase_db import init_db
 from handlers import admin, common, inline, matchmaking, play
 
@@ -37,13 +38,15 @@ async def on_startup(app: web.Application):
     await bot.set_webhook(url=config.WEBHOOK_URL, drop_pending_updates=True,
                           allowed_updates=dp.resolve_used_update_types())
     app["timeout_task"] = asyncio.create_task(matchmaking.search_timeout_loop(bot))
+    app["turn_task"] = asyncio.create_task(turns.turn_watch_loop(bot))
     logging.info("Webhook set: %s", config.WEBHOOK_URL)
 
 
 async def on_shutdown(app: web.Application):
-    task = app.get("timeout_task")
-    if task:
-        task.cancel()
+    for key in ("timeout_task", "turn_task"):
+        task = app.get(key)
+        if task:
+            task.cancel()
     await bot.session.close()
 
 
