@@ -1,14 +1,10 @@
 """لوحة تحكم المالك — تعديل كل شيء حياً من داخل تيليجرام."""
-from aiogram import Bot, F, Router
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from aiogram.types import (CallbackQuery, InlineKeyboardButton,
+                           InlineKeyboardMarkup, Message)
 
 import config
 import settings
@@ -26,7 +22,6 @@ class EditState(StatesGroup):
     waiting_value = State()
 
 
-# المفاتيح القابلة للتعديل كرقم
 NUMERIC = {
     "points_win": "نقاط الفوز",
     "points_draw": "نقاط التعادل",
@@ -43,7 +38,6 @@ NUMERIC = {
     "tier_gold": "عتبة الذهب",
     "tier_diamond": "عتبة الماس",
 }
-# المفاتيح النصية
 TEXTS = {
     "text_welcome": "نص الترحيب",
     "text_win": "نص الفوز ({name})",
@@ -70,12 +64,16 @@ def panel():
         [InlineKeyboardButton(text="🔢 الأرقام (نقاط ومهلات)", callback_data="a:points")],
         [InlineKeyboardButton(text="📝 تعديل النصوص", callback_data="a:texts")],
         [InlineKeyboardButton(text="🎁 الجوائز", callback_data="a:rewards")],
-        [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
         [InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
+        [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
         [InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
         [InlineKeyboardButton(text="♻️ تصفير لوحة الصدارة", callback_data="a:reset")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _back_row():
+    return [InlineKeyboardButton(text="« رجوع", callback_data="a:back")]
 
 
 @router.message(Command("admin"))
@@ -92,7 +90,7 @@ async def a_points(call: CallbackQuery):
     rows = [[InlineKeyboardButton(
         text=f"{label}: {settings.get(key)}", callback_data=f"set:{key}")]
         for key, label in NUMERIC.items()]
-    rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
+    rows.append(_back_row())
     await call.message.edit_text(
         "اختر القيمة لتعديلها:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
@@ -104,7 +102,7 @@ async def a_texts(call: CallbackQuery):
         return await call.answer()
     rows = [[InlineKeyboardButton(text=label, callback_data=f"set:{key}")]
             for key, label in TEXTS.items()]
-    rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
+    rows.append(_back_row())
     await call.message.edit_text(
         "اختر النص لتعديله:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
@@ -115,15 +113,41 @@ async def a_rewards(call: CallbackQuery):
     if not is_owner(call.from_user.id):
         return await call.answer()
     prizes = settings.get("reward_prizes") or []
-    lines = ["🎁 جوائز المراكز:\n"]
+    rows = []
     for i in range(3):
-        p = prizes[i] if i < len(prizes) and prizes[i] else "— (غير محددة)"
-        lines.append(f"{_MEDALS[i]} {p}")
-    lines.append("\nللتعديل:\n/setreward <المركز> <النص>")
+        cur = prizes[i] if i < len(prizes) and prizes[i] else "غير محددة"
+        rows.append([InlineKeyboardButton(
+            text=f"{_MEDALS[i]} {cur}", callback_data=f"setprize:{i + 1}")])
+    rows.append(_back_row())
     await call.message.edit_text(
-        "\n".join(lines),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="« رجوع", callback_data="a:back")]]))
+        "🎁 اضغط مركزاً لتعديل جائزته:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("setprize:"))
+async def a_setprize(call: CallbackQuery, state: FSMContext):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    rank = call.data.split(":", 1)[1]
+    await state.update_data(key=f"__prize_{rank}")
+    await state.set_state(EditState.waiting_value)
+    await call.message.answer(
+        f"أرسل نص جائزة المركز {rank} (أو أرسل - للحذف):")
+    await call.answer()
+
+
+@router.callback_query(F.data == "a:botpts")
+async def a_botpts(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    rows = [[InlineKeyboardButton(
+        text=f"{label}: {settings.get(key)}", callback_data=f"set:{key}")]
+        for key, label in BOT_POINTS.items()]
+    rows.append(_back_row())
+    await call.message.edit_text(
+        "نقاط الفوز حسب مستوى البوت:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
 
@@ -136,7 +160,7 @@ async def a_toggles(call: CallbackQuery):
         state = "✅" if settings.get(key) else "❌"
         rows.append([InlineKeyboardButton(
             text=f"{state} {label}", callback_data=f"tg:{key}")])
-    rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
+    rows.append(_back_row())
     await call.message.edit_text(
         "اضغط للتبديل:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
@@ -151,20 +175,6 @@ async def a_toggle_set(call: CallbackQuery):
     await a_toggles(call)
 
 
-@router.callback_query(F.data == "a:botpts")
-async def a_botpts(call: CallbackQuery):
-    if not is_owner(call.from_user.id):
-        return await call.answer()
-    rows = [[InlineKeyboardButton(
-        text=f"{label}: {settings.get(key)}", callback_data=f"set:{key}")]
-        for key, label in BOT_POINTS.items()]
-    rows.append([InlineKeyboardButton(text="« رجوع", callback_data="a:back")])
-    await call.message.edit_text(
-        "نقاط الفوز حسب مستوى البوت:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-    await call.answer()
-
-
 @router.callback_query(F.data == "a:stats")
 async def a_stats(call: CallbackQuery):
     if not is_owner(call.from_user.id):
@@ -175,8 +185,7 @@ async def a_stats(call: CallbackQuery):
     n_games = games[0][0].value if games else 0
     await call.message.edit_text(
         f"📈 إحصائيات:\n\nاللاعبون: {n_users}\nالألعاب: {n_games}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="« رجوع", callback_data="a:back")]]))
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_row()]))
     await call.answer()
 
 
@@ -199,7 +208,6 @@ async def a_back(call: CallbackQuery):
     await call.answer()
 
 
-# ---------- إدخال قيمة جديدة عبر FSM ----------
 @router.callback_query(F.data.startswith("set:"))
 async def a_set_start(call: CallbackQuery, state: FSMContext):
     if not is_owner(call.from_user.id):
@@ -218,8 +226,21 @@ async def a_set_value(message: Message, state: FSMContext):
         await state.clear()
         return
     data = await state.get_data()
-    key = data["key"]
-    value = message.text
+    key = data.get("key", "")
+    value = message.text or ""
+
+    if key.startswith("__prize_"):
+        rank = int(key.rsplit("_", 1)[-1])
+        prizes = list(settings.get("reward_prizes") or [])
+        while len(prizes) < 3:
+            prizes.append("")
+        prizes[rank - 1] = "" if value.strip() in ("-", "") else value.strip()
+        settings.update("reward_prizes", prizes)
+        await state.clear()
+        shown = prizes[rank - 1] or "(محذوفة)"
+        await message.answer(f"✅ جائزة المركز {rank}: {shown}", reply_markup=panel())
+        return
+
     if key in NUMERIC or key in BOT_POINTS:
         try:
             value = int(value)
