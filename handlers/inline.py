@@ -171,6 +171,8 @@ async def guest_xo(message: Message):
         return
     if caller.is_bot:
         return
+    if not caller.username:
+        return
     if _guest_throttled(caller.id):
         return
 

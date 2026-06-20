@@ -462,11 +462,14 @@ def _archive_and_reset(old_num):
     champs = []
     for i, u in enumerate(top_users(size)):
         champs.append({
-            "name": u["name"], "points": u["points"],
+            "id": u["id"], "name": u["name"], "points": u["points"],
             "prize": prizes[i] if i < len(prizes) and prizes[i] else "",
         })
+    now_ts = int(time.time())
     db().collection("meta").document("last_season").set({
-        "number": old_num, "ended_at": int(time.time()), "top": champs})
+        "number": old_num, "ended_at": now_ts, "top": champs})
+    db().collection("meta").document("pending_coronation").set({
+        "number": old_num, "ended_at": now_ts, "top": champs})
 
     batch = db().batch()
     n = 0
@@ -495,3 +498,19 @@ def tier_name(points):
     if p >= int(settings.get("tier_silver") or 50):
         return "فضة"
     return "برونز"
+
+
+def pop_pending_coronation():
+    """يقرأ ويحذف تتويجاً معلّقاً (atomic). يرجع dict أو None."""
+    ref = db().collection("meta").document("pending_coronation")
+
+    @transactional
+    def _txn(txn):
+        snap = ref.get(transaction=txn)
+        if not snap.exists:
+            return None
+        d = snap.to_dict()
+        txn.delete(ref)
+        return d
+
+    return _txn(db().transaction())

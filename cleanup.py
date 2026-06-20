@@ -1,20 +1,16 @@
-"""تنظيف الألعاب العالقة عبر Piggyback على التحديثات الواردة.
-
-سقف صارم: أي لعبة غير منتهية مضى على إنشائها أكثر من stale_timeout تُمسح،
-وتُعدَّل رسالتها إلى text_expired (حتى لو كانت نشطة).
-يعمل بالـPiggyback لأن خدمة Render المجانية تنام، فلا يُعوَّل على لوب خلفي.
-"""
+"""تنظيف الألعاب العالقة + تدوير المواسم + تتويج الفائزين — عبر Piggyback."""
 import asyncio
 import logging
 import time
 
 from aiogram import BaseMiddleware
 
+import config
 import settings
 import store
 
-_MIN_INTERVAL = 30   # أقصى تردّد لتمريرة التنظيف (ثوانٍ)
-_BATCH = 20          # حدّ الألعاب لكل تمريرة
+_MIN_INTERVAL = 30
+_BATCH = 20
 _last_run = 0.0
 _tasks = set()
 
@@ -60,8 +56,55 @@ async def cleanup_stale_games(bot):
     logging.info("cleanup: expired %d stale game(s)", n)
 
 
+def _mention(uid, name):
+    safe = (name or str(uid)).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return f'<a href="tg://user?id={uid}">{safe}</a>'
+
+
+async def process_coronation(bot):
+    """عند انتهاء موسم: يرسل الفائزين (أسماء + يوزرات + روابط) للمالك فقط."""
+    pending = store.pop_pending_coronation()
+    if not pending or not pending.get("top"):
+        return
+    medals = ["🥇 المركز الأول", "🥈 المركز الثاني", "🥉 المركز الثالث"]
+    lines = [f"🏆 انتهى الموسم {pending.get('number', '؟')}! الفائزون:\n"]
+    for i, c in enumerate(pending["top"][:3]):
+        uid = c.get("id")
+        uname = ""
+        try:
+            chat = await bot.get_chat(uid)
+            if getattr(chat, "username", None):
+                uname = f" @{chat.username}"
+        except Exception:
+            pass
+        prize = f" — 🎁 {c['prize']}" if c.get("prize") else ""
+        lines.append(f"{medals[i]}: {_mention(uid, c.get('name', '?'))}{uname} "
+                     f"⭐{c.get('points', 0)}{prize}")
+        lines.append(f"   <code>{uid}</code>")
+    try:
+        await bot.send_message(config.OWNER_ID, "\n".join(lines))
+        logging.info("coronation sent to owner: season %s", pending.get("number"))
+    except Exception:
+        logging.exception("coronation announce failed")
+
+
+async def _piggyback(bot):
+    try:
+        store.maybe_rollover_season()
+    except Exception:
+        logging.exception("season rollover failed")
+    try:
+        await process_coronation(bot)
+    except Exception:
+        logging.exception("coronation failed")
+    try:
+        await cleanup_stale_games(bot)
+    except Exception:
+        logging.exception("stale cleanup failed")
+
+
 class StaleGameCleanupMiddleware(BaseMiddleware):
-    """يشغّل التنظيف انتهازياً (fire-and-forget) عند وصول تحديث، مع خنق."""
+    """يشغّل (تنظيف + تدوير موسم + تتويج) انتهازياً عند وصول تحديث، مع خنق."""
 
     async def __call__(self, handler, event, data):
         global _last_run
@@ -70,7 +113,7 @@ class StaleGameCleanupMiddleware(BaseMiddleware):
             _last_run = now
             bot = data.get("bot")
             if bot is not None:
-                t = asyncio.create_task(cleanup_stale_games(bot))
+                t = asyncio.create_task(_piggyback(bot))
                 _tasks.add(t)
                 t.add_done_callback(_tasks.discard)
         return await handler(event, data)

@@ -10,6 +10,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 import cleanup
+import guards
 import config
 import settings
 import turns
@@ -28,6 +29,7 @@ dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
 
+dp.update.outer_middleware(guards.RequireUsernameMiddleware())
 dp.update.outer_middleware(matchmaking.QueueCleanupMiddleware())
 dp.update.outer_middleware(cleanup.StaleGameCleanupMiddleware())
 
