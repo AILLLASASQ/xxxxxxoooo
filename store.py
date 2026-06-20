@@ -514,3 +514,24 @@ def pop_pending_coronation():
         return d
 
     return _txn(db().transaction())
+
+
+def force_end_season():
+    """ينهي الموسم الحالي فوراً (يؤرشف + يصفّر + يبدأ موسماً جديداً).
+
+    يرجع رقم الموسم المنتهي. التتويج (pending_coronation) يُضبط داخل _archive_and_reset.
+    """
+    ref = db().collection("meta").document("season")
+    now = int(time.time())
+
+    @transactional
+    def _claim(txn):
+        snap = ref.get(transaction=txn)
+        d = snap.to_dict() if snap.exists else None
+        old = int(d.get("number", 1)) if d else 1
+        txn.set(ref, {"number": old + 1, "end": now + _season_days() * 86400})
+        return old
+
+    old_num = _claim(db().transaction())
+    _archive_and_reset(old_num)
+    return old_num

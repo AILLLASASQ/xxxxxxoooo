@@ -1,11 +1,12 @@
 """لوحة تحكم المالك — تعديل كل شيء حياً من داخل تيليجرام."""
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
+import cleanup
 import config
 import settings
 import store
@@ -67,7 +68,7 @@ def panel():
         [InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
         [InlineKeyboardButton(text="🎚️ تفعيل/تعطيل الأوضاع", callback_data="a:toggles")],
         [InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
-        [InlineKeyboardButton(text="♻️ تصفير لوحة الصدارة", callback_data="a:reset")],
+        [InlineKeyboardButton(text="🏁 إنهاء الموسم الآن", callback_data="a:endseason")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -189,15 +190,17 @@ async def a_stats(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(F.data == "a:reset")
-async def a_reset(call: CallbackQuery):
+@router.callback_query(F.data == "a:endseason")
+async def a_end_season(call: CallbackQuery, bot: Bot):
     if not is_owner(call.from_user.id):
         return await call.answer()
-    batch = store.db().batch()
-    for snap in store.db().collection("users").stream():
-        batch.update(snap.reference, {"points": 0, "wins": 0, "losses": 0, "draws": 0})
-    batch.commit()
-    await call.answer("تم تصفير لوحة الصدارة ✅", show_alert=True)
+    old = store.force_end_season()
+    try:
+        await cleanup.process_coronation(bot)
+    except Exception:
+        pass
+    await call.answer(f"✅ أُنهي الموسم {old} وبدأ موسم جديد.", show_alert=True)
+    await call.message.edit_text("⚙️ لوحة تحكم المالك:", reply_markup=panel())
 
 
 @router.callback_query(F.data == "a:back")
