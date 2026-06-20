@@ -414,3 +414,84 @@ def user_rank(user_id):
     except Exception:
         higher = 0
     return higher + 1, pts
+
+
+# ---------- المواسم والرُتب ----------
+def _season_days():
+    return max(1, int(settings.get("season_days") or 7))
+
+
+def get_season():
+    ref = db().collection("meta").document("season")
+    snap = ref.get()
+    if snap.exists:
+        return snap.to_dict()
+    data = {"number": 1, "end": int(time.time()) + _season_days() * 86400}
+    ref.set(data)
+    return data
+
+
+def maybe_rollover_season():
+    """يصفّر الموسم إن انتهى (آمن من الازدواج). يرجع True عند التصفير."""
+    ref = db().collection("meta").document("season")
+    now = int(time.time())
+
+    @transactional
+    def _claim(txn):
+        snap = ref.get(transaction=txn)
+        d = snap.to_dict() if snap.exists else None
+        if not d:
+            txn.set(ref, {"number": 1, "end": now + _season_days() * 86400})
+            return None
+        if now < int(d.get("end", 0)):
+            return None
+        old = int(d.get("number", 1))
+        txn.update(ref, {"number": old + 1, "end": now + _season_days() * 86400})
+        return old
+
+    old_num = _claim(db().transaction())
+    if old_num is None:
+        return False
+    _archive_and_reset(old_num)
+    return True
+
+
+def _archive_and_reset(old_num):
+    prizes = settings.get("reward_prizes") or []
+    size = int(settings.get("leaderboard_size") or 5)
+    champs = []
+    for i, u in enumerate(top_users(size)):
+        champs.append({
+            "name": u["name"], "points": u["points"],
+            "prize": prizes[i] if i < len(prizes) and prizes[i] else "",
+        })
+    db().collection("meta").document("last_season").set({
+        "number": old_num, "ended_at": int(time.time()), "top": champs})
+
+    batch = db().batch()
+    n = 0
+    for snap in db().collection("users").stream():
+        batch.update(snap.reference,
+                     {"points": 0, "wins": 0, "losses": 0, "draws": 0})
+        n += 1
+        if n % 400 == 0:
+            batch.commit()
+            batch = db().batch()
+    if n % 400:
+        batch.commit()
+
+
+def last_season():
+    snap = db().collection("meta").document("last_season").get()
+    return snap.to_dict() if snap.exists else None
+
+
+def tier_name(points):
+    p = int(points or 0)
+    if p >= int(settings.get("tier_diamond") or 300):
+        return "ماسي"
+    if p >= int(settings.get("tier_gold") or 150):
+        return "ذهب"
+    if p >= int(settings.get("tier_silver") or 50):
+        return "فضة"
+    return "برونز"

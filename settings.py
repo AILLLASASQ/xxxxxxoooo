@@ -6,7 +6,6 @@ DEFAULTS = {
     "points_draw": 1,
     "points_loss": -1,
     "points_floor": -50,
-    # نقاط الفوز حسب مستوى البوت (اللاعب يختار المستوى عند اللعب)
     "bot_win_easy": 1,
     "bot_win_medium": 2,
     "bot_win_hard": 3,
@@ -19,6 +18,12 @@ DEFAULTS = {
     "turn_check_interval": 3,
     "text_timeout_win": "⏱️ فاز {name} (انتهى وقت الخصم)",
     "reward_prizes": ["", "", ""],
+    # لوحة الشرف والمواسم
+    "leaderboard_size": 5,
+    "season_days": 7,
+    "tier_silver": 50,
+    "tier_gold": 150,
+    "tier_diamond": 300,
     "enable_pvp": True,
     "enable_vs_bot": True,
     "enable_inline": True,

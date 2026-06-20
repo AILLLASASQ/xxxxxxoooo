@@ -37,6 +37,11 @@ NUMERIC = {
     "stale_timeout": "مهلة حذف اللعبة (ث)",
     "turn_timeout": "مهلة الدور (ث، 0=إيقاف)",
     "turn_check_interval": "تردد فحص المهلة (ث)",
+    "leaderboard_size": "عدد المعروضين",
+    "season_days": "مدة الموسم (أيام)",
+    "tier_silver": "عتبة الفضة",
+    "tier_gold": "عتبة الذهب",
+    "tier_diamond": "عتبة الماس",
 }
 # المفاتيح النصية
 TEXTS = {
