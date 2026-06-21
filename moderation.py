@@ -74,3 +74,33 @@ def add_pair_points(earner, opponent, pts):
         ref.set(data)
     except Exception as e:
         print(f"add_pair_points: {e}")
+
+
+# ---------- الإشراف: حظر / رفع / سبب / قائمة ----------
+def ban_user(uid, name="", reason=""):
+    data = {"banned": True, "ban_reason": reason or "",
+            "banned_at": _today()}
+    if name:
+        data["name"] = name
+    _user_ref(uid).set(data, merge=True)
+
+
+def unban_user(uid):
+    _user_ref(uid).set({"banned": False, "ban_reason": ""}, merge=True)
+
+
+def ban_reason(uid):
+    snap = _user_ref(uid).get()
+    return (snap.to_dict() or {}).get("ban_reason", "") if snap.exists else ""
+
+
+def list_banned(limit=50):
+    from google.cloud.firestore_v1 import FieldFilter
+    out = []
+    q = db().collection("users").where(
+        filter=FieldFilter("banned", "==", True)).limit(int(limit))
+    for s in q.stream():
+        d = s.to_dict() or {}
+        out.append({"id": s.id, "name": d.get("name", s.id),
+                    "reason": d.get("ban_reason", "")})
+    return out

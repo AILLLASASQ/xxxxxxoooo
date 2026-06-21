@@ -1,6 +1,6 @@
 """لوحة تحكم المالك — تعديل كل شيء حياً من داخل تيليجرام."""
 from aiogram import Bot, F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
@@ -8,6 +8,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
 
 import cleanup
 import config
+import moderation
 import settings
 import store
 
@@ -68,6 +69,7 @@ def panel():
          InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
         [InlineKeyboardButton(text="🎚️ الأوضاع", callback_data="a:toggles"),
          InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
+        [InlineKeyboardButton(text="🛡️ الإشراف", callback_data="a:mod")],
         [InlineKeyboardButton(text="🏁 إنهاء الموسم الآن", callback_data="a:endseason")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -253,3 +255,111 @@ async def a_set_value(message: Message, state: FSMContext):
     settings.update(key, value)
     await state.clear()
     await message.answer(f"✅ تم التحديث: {key} = {value}", reply_markup=panel())
+
+
+# ===== الإشراف: حظر / رفع حظر / قائمة =====
+async def _resolve_target(message, command, bot):
+    """يرجع (uid, name, rest) من رد على رسالة أو @يوزر أو آيدي."""
+    if message.reply_to_message and message.reply_to_message.from_user:
+        u = message.reply_to_message.from_user
+        return u.id, u.full_name, (command.args or "").strip()
+    args = (command.args or "").split(maxsplit=1)
+    if not args:
+        return None, None, ""
+    tok = args[0]
+    rest = args[1].strip() if len(args) > 1 else ""
+    if tok.lstrip("-").isdigit():
+        return int(tok), None, rest
+    uname = tok.lstrip("@")
+    try:
+        chat = await bot.get_chat(f"@{uname}")
+        return chat.id, getattr(chat, "full_name", None) or uname, rest
+    except Exception:
+        return None, None, rest
+
+
+def _banned_view():
+    banned = moderation.list_banned(50)
+    if not banned:
+        return "🛡️ لا يوجد محظورون حالياً.", InlineKeyboardMarkup(
+            inline_keyboard=[_back_row()])
+    lines = ["🛡️ المحظورون:\n"]
+    rows = []
+    for b in banned:
+        r = f" — {b['reason']}" if b.get("reason") else ""
+        lines.append(f"• {b['name']} ({b['id']}){r}")
+        rows.append([InlineKeyboardButton(
+            text=f"✅ رفع حظر {b['name']}", callback_data=f"unban:{b['id']}")])
+    rows.append(_back_row())
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+_MOD_HELP = ("\n\n— الأوامر —\n/ban (رد/@يوزر/آيدي) [سبب]\n"
+             "/unban (رد/@يوزر/آيدي)\n/banned")
+
+
+@router.message(Command("ban"))
+async def cmd_ban(message: Message, command: CommandObject, bot: Bot):
+    if not is_owner(message.from_user.id):
+        return
+    uid, name, reason = await _resolve_target(message, command, bot)
+    if uid is None:
+        await message.answer(
+            "الصيغة:\n/ban <آيدي أو @يوزر> [سبب]\n"
+            "أو رُدّ على رسالة المخالف بـ /ban [سبب]")
+        return
+    if uid == config.OWNER_ID:
+        await message.answer("لا يمكنك حظر المالك 🙂")
+        return
+    if not name:
+        name = (store.get_user(uid) or {}).get("name", str(uid))
+    moderation.ban_user(uid, name, reason)
+    txt = f"🚫 حُظر {name} ({uid})."
+    if reason:
+        txt += f"\nالسبب: {reason}"
+    await message.answer(txt)
+
+
+@router.message(Command("unban"))
+async def cmd_unban(message: Message, command: CommandObject, bot: Bot):
+    if not is_owner(message.from_user.id):
+        return
+    uid, _, _ = await _resolve_target(message, command, bot)
+    if uid is None:
+        await message.answer("الصيغة: /unban <آيدي أو @يوزر> أو رُدّ بـ /unban")
+        return
+    moderation.unban_user(uid)
+    await message.answer(f"✅ رُفع الحظر عن {uid}.")
+
+
+@router.message(Command("banned"))
+async def cmd_banned(message: Message):
+    if not is_owner(message.from_user.id):
+        return
+    text, kb = _banned_view()
+    await message.answer(text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "a:mod")
+async def a_mod(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    text, kb = _banned_view()
+    await call.message.edit_text(text + _MOD_HELP, reply_markup=kb)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("unban:"))
+async def a_unban(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    try:
+        moderation.unban_user(int(call.data.split(":", 1)[1]))
+    except Exception:
+        pass
+    await call.answer("✅ رُفع الحظر", show_alert=True)
+    text, kb = _banned_view()
+    try:
+        await call.message.edit_text(text + _MOD_HELP, reply_markup=kb)
+    except Exception:
+        pass
