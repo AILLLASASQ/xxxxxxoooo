@@ -97,7 +97,7 @@ def _targeted_text(creator_name, target, x_slot=None, o_slot=None):
     def who(slot):
         return slot["name"] if slot else "بانتظار…"
     return (
-        "🎯 تحدٍّ موجّه!\n"
+        "🎯 تحدٍّ خاص!\n"
         f"{creator_name} يتحدّى @{target} ⚔️\n\n"
         f"❌: {who(x_slot)}\n⭕: {who(o_slot)}\n\n"
         "الطرفان فقط يمكنهما الاختيار — اختر رمزك:"
@@ -125,7 +125,7 @@ async def inline_xo(query: InlineQuery):
     if target:
         result = InlineQueryResultArticle(
             id=f"tc-{gid}",
-            title=f"🎯 تحدِّ @{target}",
+            title=f"🎯 تحدي ضد @{target}",
             description="تحدٍّ موجّه — هو وحده من يقبل",
             input_message_content=InputTextMessageContent(
                 message_text=_targeted_text(cname, target)),
