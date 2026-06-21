@@ -596,3 +596,16 @@ def delete_challenge(gid):
         db().collection("challenges").document(gid).delete()
     except Exception:
         pass
+
+
+def fetch_stale_challenges(max_age, limit=50):
+    """يرجع تحديات `challenges` التي مضى على إنشائها أكثر من max_age (غير مكتملة)."""
+    now = int(time.time())
+    cutoff = now - int(max_age)
+    out = []
+    for snap in db().collection("challenges").limit(int(limit)).stream():
+        d = snap.to_dict() or {}
+        if int(d.get("created_at", now)) <= cutoff:
+            d["_gid"] = snap.id
+            out.append(d)
+    return out

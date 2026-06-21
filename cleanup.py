@@ -56,6 +56,26 @@ async def cleanup_stale_games(bot):
     logging.info("cleanup: expired %d stale game(s)", n)
 
 
+async def cleanup_stale_challenges(bot):
+    """يُنهي بطاقات التحدي الموجّه التي بدأ حجزها ولم تكتمل بعد stale_timeout."""
+    timeout = int(settings.get("stale_timeout") or 0)
+    if timeout <= 0:
+        return
+    stale = store.fetch_stale_challenges(timeout, limit=50)[:_BATCH]
+    if not stale:
+        return
+    full_text = f"⭕❌ إكس أو\n\n{settings.get('text_expired')}"
+    for d in stale:
+        imid = d.get("imid")
+        if imid:
+            try:
+                await bot.edit_message_text(text=full_text, inline_message_id=imid)
+            except Exception:
+                logging.exception("expire challenge msg failed")
+        store.delete_challenge(d["_gid"])
+    logging.info("cleanup: expired %d stale challenge(s)", len(stale))
+
+
 def _mention(uid, name):
     safe = (name or str(uid)).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f'<a href="tg://user?id={uid}">{safe}</a>'
@@ -102,6 +122,10 @@ async def _piggyback(bot):
         await cleanup_stale_games(bot)
     except Exception:
         logging.exception("stale cleanup failed")
+    try:
+        await cleanup_stale_challenges(bot)
+    except Exception:
+        logging.exception("stale challenge cleanup failed")
 
 
 class StaleGameCleanupMiddleware(BaseMiddleware):
