@@ -556,3 +556,43 @@ def force_end_season():
     old_num = _claim(db().transaction())
     _archive_and_reset(old_num)
     return old_num
+
+
+# ---------- التحدي الموجّه (حجز رمز حصري) ----------
+def claim_challenge_symbol(gid, sym, uid, name, imid):
+    """يحجز رمزاً في تحدٍّ موجّه (transactional، يدعم التبديل).
+
+    sym: "X" أو "O". يرجع (status, doc) حيث status ∈
+    {"already","taken","waiting","ready"}.
+    """
+    key = "x" if sym == "X" else "o"
+    other = "o" if key == "x" else "x"
+    ref = db().collection("challenges").document(gid)
+
+    @transactional
+    def _txn(txn):
+        snap = ref.get(transaction=txn)
+        d = snap.to_dict() if snap.exists else None
+        if not d:
+            d = {"x": None, "o": None, "imid": imid,
+                 "created_at": int(time.time())}
+        cur = d.get(key)
+        if cur and int(cur.get("id")) == int(uid):
+            return "already", d
+        if cur:
+            return "taken", d
+        d[key] = {"id": int(uid), "name": name}
+        if d.get(other) and int(d[other].get("id")) == int(uid):
+            d[other] = None
+        ready = bool(d.get("x") and d.get("o"))
+        txn.set(ref, d)
+        return ("ready" if ready else "waiting"), d
+
+    return _txn(db().transaction())
+
+
+def delete_challenge(gid):
+    try:
+        db().collection("challenges").document(gid).delete()
+    except Exception:
+        pass

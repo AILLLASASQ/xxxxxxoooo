@@ -1,5 +1,6 @@
 """وضع الإنلاين + الضيف: لعب إكس أو عبر يوزر البوت في أي محادثة."""
 import logging
+import re
 import time
 
 from aiogram import Bot, F, Router
@@ -69,6 +70,39 @@ def _guest_text(caller_name):
     )
 
 
+_USERNAME_RE = re.compile(r"@([A-Za-z0-9_]{5,32})")
+
+
+def _parse_target(q):
+    if not q:
+        return None
+    m = _USERNAME_RE.search(q)
+    return m.group(1).lower() if m else None
+
+
+def _targeted_kb(gid, creator_id, target):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="❌", callback_data=f"tc:{gid}:{creator_id}:X:{target}"),
+        InlineKeyboardButton(text="⭕", callback_data=f"tc:{gid}:{creator_id}:O:{target}"),
+    ]])
+
+
+def _targeted_text(creator_name, target, x_slot=None, o_slot=None):
+    def who(slot):
+        return slot["name"] if slot else "بانتظار…"
+    return (
+        "🎯 تحدٍّ موجّه!\n"
+        f"{creator_name} يتحدّى @{target} ⚔️\n\n"
+        f"❌: {who(x_slot)}\n⭕: {who(o_slot)}\n\n"
+        "الطرفان فقط يمكنهما الاختيار — اختر رمزك:"
+    )
+
+
+def _targeted_text_from_doc(creator_id, target, d):
+    cname = (store.get_user(creator_id) or {}).get("name", "المنشئ")
+    return _targeted_text(cname, target, d.get("x"), d.get("o"))
+
+
 @router.inline_query()
 async def inline_xo(query: InlineQuery):
     if not settings.get("enable_inline"):
@@ -80,6 +114,20 @@ async def inline_xo(query: InlineQuery):
     cid = query.from_user.id
     cname = _name(query.from_user)
     ts = int(time.time())
+
+    target = _parse_target(query.query)
+    if target:
+        result = InlineQueryResultArticle(
+            id=f"tc-{gid}",
+            title=f"🎯 تحدِّ @{target}",
+            description="تحدٍّ موجّه — هو وحده من يقبل",
+            input_message_content=InputTextMessageContent(
+                message_text=_targeted_text(cname, target)),
+            reply_markup=_targeted_kb(gid, cid, target),
+        )
+        await query.answer([result], cache_time=1, is_personal=True)
+        return
+
     results = [
         InlineQueryResultArticle(
             id=f"{gid}-X",
@@ -159,6 +207,57 @@ async def inline_join(call: CallbackQuery, bot: Bot):
     except Exception:
         logging.exception("inline_join edit failed")
     await call.answer("بدأت اللعبة!")
+
+
+@router.callback_query(F.data.startswith("tc:"))
+async def targeted_claim(call: CallbackQuery, bot: Bot):
+    try:
+        _, gid, creator_id, sym, target = call.data.split(":")
+        creator_id = int(creator_id)
+    except Exception:
+        await call.answer("بيانات غير صالحة.", show_alert=True)
+        return
+    if sym not in ("X", "O"):
+        await call.answer("بيانات غير صالحة.", show_alert=True)
+        return
+
+    p = call.from_user
+    uname = (p.username or "").lower()
+    if not (p.id == creator_id or (uname and uname == target)):
+        await call.answer("هذا التحدي ليس لك ⛔", show_alert=True)
+        return
+
+    store.ensure_user(p.id, _name(p))
+    status, d = store.claim_challenge_symbol(
+        gid, sym, p.id, _name(p), call.inline_message_id)
+
+    if status == "already":
+        await call.answer("اخترت هذا الرمز بالفعل ✅")
+        return
+    if status == "taken":
+        await call.answer("هذا الرمز محجوز، اختر الآخر 🔁", show_alert=True)
+        return
+    if status == "ready":
+        x, o = d["x"], d["o"]
+        data = store.create_inline_game(
+            gid, x["id"], x["name"], o["id"], o["name"], call.inline_message_id)
+        store.delete_challenge(gid)
+        text, kb = render.render(data)
+        try:
+            await bot.edit_message_text(
+                text=text, inline_message_id=call.inline_message_id, reply_markup=kb)
+        except Exception:
+            logging.exception("targeted start edit failed")
+        await call.answer("بدأت اللعبة! 🎮")
+        return
+    try:
+        await bot.edit_message_text(
+            text=_targeted_text_from_doc(creator_id, target, d),
+            inline_message_id=call.inline_message_id,
+            reply_markup=_targeted_kb(gid, creator_id, target))
+    except Exception:
+        logging.exception("targeted waiting edit failed")
+    await call.answer("تم اختيار رمزك ✅")
 
 
 # ===== Guest Mode: الرد عند ذكر يوزر البوت دون عضوية (خاص + مجموعات) =====
