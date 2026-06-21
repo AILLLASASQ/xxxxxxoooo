@@ -281,16 +281,19 @@ async def guest_xo(message: Message):
     if _guest_throttled(caller.id):
         return
 
-    store.ensure_user(caller.id, _name(caller))
-    gid = store.new_game_id()
-    ts = int(time.time())
+    text = ("⭕❌ إكس أو\n\n"
+            "🎮 اصنع صفاً من ثلاثة رموز لتفوز!\n"
+            "اختر كيف تبدأ:")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🎯 تحدِّ صديقاً", switch_inline_query_current_chat="@"),
+        InlineKeyboardButton(text="🆚 تحدٍّ مفتوح", switch_inline_query_current_chat=""),
+    ]])
     result = InlineQueryResultArticle(
-        id=gid,
-        title="🎮 ابدأ لعبة إكس أو",
-        description="العب ضد من ذكر البوت — اختر ❌ أو ⭕",
-        input_message_content=InputTextMessageContent(
-            message_text=_guest_text(_name(caller))),
-        reply_markup=_choose_kb(gid, caller.id, ts),
+        id=store.new_game_id(),
+        title="🎮 إكس أو — اختر طريقتك",
+        description="تحدِّ صديقاً معيّناً أو ابدأ تحدياً مفتوحاً",
+        input_message_content=InputTextMessageContent(message_text=text),
+        reply_markup=kb,
     )
     try:
         await message.answer_guest_query(result=result)
