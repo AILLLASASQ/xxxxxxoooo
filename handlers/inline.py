@@ -46,10 +46,16 @@ def _join_kb(gid, creator_id, joiner_sym, ts):
 
 
 def _choose_kb(gid, creator_id, ts):
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="❌", callback_data=f"ij:{gid}:{creator_id}:X:{ts}"),
-        InlineKeyboardButton(text="⭕", callback_data=f"ij:{gid}:{creator_id}:O:{ts}"),
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="❌", callback_data=f"ij:{gid}:{creator_id}:X:{ts}"),
+            InlineKeyboardButton(text="⭕", callback_data=f"ij:{gid}:{creator_id}:O:{ts}"),
+        ],
+        [
+            InlineKeyboardButton(text="🎯 تحدِّ صديقاً", switch_inline_query_current_chat="@"),
+            InlineKeyboardButton(text="🆚 تحدٍّ مفتوح", switch_inline_query_current_chat=""),
+        ],
+    ])
 
 
 def _invite_text(creator_name, creator_sym):
