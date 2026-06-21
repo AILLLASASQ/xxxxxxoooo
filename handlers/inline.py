@@ -285,7 +285,7 @@ async def guest_xo(message: Message):
             "🎮 اصنع صفاً من ثلاثة رموز لتفوز!\n"
             "اختر كيف تبدأ:")
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🎯 تحدِّ صديقاً", switch_inline_query_current_chat="@"),
+        InlineKeyboardButton(text="🎯 تحدِّ صديقاً", switch_inline_query_current_chat="@يوزر_صديقك"),
         InlineKeyboardButton(text="🆚 تحدٍّ مفتوح", switch_inline_query_current_chat=""),
     ]])
     result = InlineQueryResultArticle(
