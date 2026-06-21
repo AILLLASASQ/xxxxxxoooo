@@ -4,7 +4,7 @@ from aiogram import BaseMiddleware
 import config
 import moderation
 
-_MSG = ("🚫 لاستخدام البوت يجب أن يكون لديك اسم مستخدم (@username) في تيليجرام.\n"
+_MSG = ("🚫 لاستخدام البوت يجب أن يكون لديك اسم مستخدم (@TR_XO_BOT) في تيليجرام.\n"
         "الإعدادات ‹ اسم المستخدم، عيّنه ثم أعد المحاولة.")
 
 
