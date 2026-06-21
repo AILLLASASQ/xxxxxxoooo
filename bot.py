@@ -13,6 +13,7 @@ import cleanup
 import guards
 import config
 import settings
+import subs
 import turns
 from firebase_db import init_db
 from handlers import admin, common, inline, matchmaking, play, rewards
@@ -28,6 +29,7 @@ dp.include_router(common.router)
 dp.include_router(matchmaking.router)
 dp.include_router(play.router)
 dp.include_router(inline.router)
+dp.include_router(subs.router)
 
 dp.update.outer_middleware(guards.RequireUsernameMiddleware())
 dp.update.outer_middleware(matchmaking.QueueCleanupMiddleware())

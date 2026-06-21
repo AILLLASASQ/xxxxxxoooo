@@ -69,7 +69,8 @@ def panel():
          InlineKeyboardButton(text="🤖 نقاط البوت", callback_data="a:botpts")],
         [InlineKeyboardButton(text="🎚️ الأوضاع", callback_data="a:toggles"),
          InlineKeyboardButton(text="📈 إحصائيات", callback_data="a:stats")],
-        [InlineKeyboardButton(text="🛡️ الإشراف", callback_data="a:mod")],
+        [InlineKeyboardButton(text="🛡️ الإشراف", callback_data="a:mod"),
+         InlineKeyboardButton(text="📢 الاشتراك", callback_data="a:fsub")],
         [InlineKeyboardButton(text="🏁 إنهاء الموسم الآن", callback_data="a:endseason")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -226,7 +227,7 @@ async def a_set_start(call: CallbackQuery, state: FSMContext):
 
 
 @router.message(EditState.waiting_value)
-async def a_set_value(message: Message, state: FSMContext):
+async def a_set_value(message: Message, state: FSMContext, bot: Bot):
     if not is_owner(message.from_user.id):
         await state.clear()
         return
@@ -244,6 +245,29 @@ async def a_set_value(message: Message, state: FSMContext):
         await state.clear()
         shown = prizes[rank - 1] or "(محذوفة)"
         await message.answer(f"✅ جائزة المركز {rank}: {shown}", reply_markup=panel())
+        return
+
+    if key == "__fsub_channel":
+        ch = "@" + value.strip().lstrip("@")
+        settings.update("force_sub_channel", ch)
+        await state.clear()
+        already = False
+        try:
+            me = await bot.get_me()
+            m = await bot.get_chat_member(ch, me.id)
+            already = m.status in ("administrator", "creator")
+        except Exception:
+            already = False
+        if already:
+            settings.update("enable_force_sub", True)
+            await message.answer(
+                f"✅ البوت مشرف في {ch} — فُعّل الاشتراك الإجباري.",
+                reply_markup=panel())
+        else:
+            settings.update("enable_force_sub", False)
+            await message.answer(
+                f"تم حفظ القناة: {ch}\n\nالآن أضِف البوت مشرفاً في {ch}.\n"
+                f"بمجرد إضافته يصلك تأكيد ويُفعّل تلقائياً.")
         return
 
     if key in NUMERIC or key in BOT_POINTS:
@@ -363,3 +387,48 @@ async def a_unban(call: CallbackQuery):
         await call.message.edit_text(text + _MOD_HELP, reply_markup=kb)
     except Exception:
         pass
+
+
+# ===== الاشتراك الإجباري =====
+@router.callback_query(F.data == "a:fsub")
+async def a_fsub(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    on = settings.get("enable_force_sub")
+    ch = settings.get("force_sub_channel") or "—"
+    if on:
+        text = f"📢 الاشتراك الإجباري: ✅ مفعّل\nالقناة: {ch}"
+        rows = [
+            [InlineKeyboardButton(text="🔁 تغيير القناة", callback_data="fsub:set")],
+            [InlineKeyboardButton(text="❌ تعطيل", callback_data="fsub:off")],
+            _back_row(),
+        ]
+    else:
+        text = ("📢 الاشتراك الإجباري: ❌ معطّل\n\n"
+                "اضغط «تفعيل» ثم أرسل يوزر قناتك، ثم أضف البوت مشرفاً فيها.")
+        rows = [
+            [InlineKeyboardButton(text="✅ تفعيل", callback_data="fsub:set")],
+            _back_row(),
+        ]
+    await call.message.edit_text(
+        text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.answer()
+
+
+@router.callback_query(F.data == "fsub:set")
+async def a_fsub_set(call: CallbackQuery, state: FSMContext):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    await state.update_data(key="__fsub_channel")
+    await state.set_state(EditState.waiting_value)
+    await call.message.answer("أرسل يوزر قناتك (مثال: @MyChannel):")
+    await call.answer()
+
+
+@router.callback_query(F.data == "fsub:off")
+async def a_fsub_off(call: CallbackQuery):
+    if not is_owner(call.from_user.id):
+        return await call.answer()
+    settings.update("enable_force_sub", False)
+    await call.answer("تم التعطيل ❌", show_alert=True)
+    await a_fsub(call)

@@ -1,10 +1,11 @@
-"""حارس: يمنع المحظورين ومن لا يملك @username (المالك مستثنى)."""
+"""حارس: حظر + اشتراك إجباري + اشتراط @username (المالك مستثنى)."""
 from aiogram import BaseMiddleware
 
 import config
 import moderation
+import subs
 
-_MSG = ("🚫 لاستخدام البوت يجب أن يكون لديك اسم مستخدم (@TR_XO_BOT) في تيليجرام.\n"
+_MSG = ("🚫 لاستخدام البوت يجب أن يكون لديك اسم مستخدم (@username) في تيليجرام.\n"
         "الإعدادات ‹ اسم المستخدم، عيّنه ثم أعد المحاولة.")
 
 
@@ -17,7 +18,7 @@ def _extract(update):
     return None, None, None
 
 
-async def _block(kind, obj, text):
+async def _block(kind, obj, text, markup=None):
     try:
         if kind == "callback_query":
             await obj.answer(text, show_alert=True)
@@ -25,7 +26,7 @@ async def _block(kind, obj, text):
             await obj.answer([], cache_time=1, is_personal=True)
         elif kind in ("message", "edited_message"):
             if not getattr(obj, "guest_query_id", None):
-                await obj.answer(text)
+                await obj.answer(text, reply_markup=markup)
     except Exception:
         pass
 
@@ -46,4 +47,12 @@ class RequireUsernameMiddleware(BaseMiddleware):
             if not user.username:
                 await _block(kind, obj, _MSG)
                 return
+            # 3) الاشتراك الإجباري (مع استثناء زر التحقّق نفسه لتفادي القفل)
+            is_check = (kind == "callback_query"
+                        and getattr(obj, "data", "") == "fsub:check")
+            if not is_check and subs.enabled():
+                bot = data.get("bot")
+                if bot is not None and not await subs.is_subscribed(bot, user.id):
+                    await _block(kind, obj, subs.gate_text(), subs.gate_markup())
+                    return
         return await handler(event, data)
